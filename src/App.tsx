@@ -18,7 +18,8 @@ import {
   BookOpen,
   Filter,
   ChevronsUpDown,
-  Grid
+  Grid,
+  LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -27,6 +28,7 @@ import StudentManager from './components/StudentManager';
 import CalendarAttendance from './components/CalendarAttendance';
 import AttendanceCalculator from './components/AttendanceCalculator';
 import WeeklyGrid from './components/WeeklyGrid';
+import Auth, { UserAccount } from './components/Auth';
 
 // Types & Initial Data
 import { Student, Section, AttendanceMap, AttendanceStatus, AttendanceNotesMap, Program } from './types';
@@ -39,6 +41,41 @@ import {
 } from './initialData';
 
 export default function App() {
+  // 0. User session & Credentials state
+  const [users, setUsers] = useState<UserAccount[]>(() => {
+    const saved = localStorage.getItem('attendance_registered_users');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    const sessionExpiry = localStorage.getItem('attendance_session_expires_at');
+    
+    if (savedUser && sessionExpiry) {
+      if (Date.now() < parseInt(sessionExpiry)) {
+        return JSON.parse(savedUser);
+      } else {
+        localStorage.removeItem('attendance_current_user');
+        localStorage.removeItem('attendance_session_expires_at');
+      }
+    }
+    return null;
+  });
+
+  const handleLoginSuccess = (user: UserAccount, remember: boolean) => {
+    setCurrentUser(user);
+    localStorage.setItem('attendance_current_user', JSON.stringify(user));
+    // Checkbox longevity: if Checked/remember -> 7 days, else 1 hour
+    const duration = remember ? 7 * 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+    localStorage.setItem('attendance_session_expires_at', (Date.now() + duration).toString());
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('attendance_current_user');
+    localStorage.removeItem('attendance_session_expires_at');
+  };
+
   // 1. Core State
   const [programs, setPrograms] = useState<Program[]>(() => {
     const saved = localStorage.getItem('attendance_programs');
@@ -500,6 +537,16 @@ export default function App() {
   const totalGlobalStudents = students.length;
   const activeSectionStudents = students.filter(s => s.sectionId === activeSectionId);
 
+  if (!currentUser) {
+    return (
+      <Auth
+        onLoginSuccess={handleLoginSuccess}
+        users={users}
+        setUsers={setUsers}
+      />
+    );
+  }
+
   return (
     <div id="application-container" className="min-h-screen text-slate-800 flex flex-col antialiased">
       
@@ -507,7 +554,7 @@ export default function App() {
       <header className="bg-white border-b border-slate-100 shadow-2xs py-4 px-6 md:px-10 shrink-0 sticky top-0 z-40 transition-colors">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-indigo-100 animate-pulse">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-indigo-100">
               <Users className="w-5 h-5" />
             </div>
             <div>
@@ -520,17 +567,45 @@ export default function App() {
             </div>
           </div>
 
-          {/* Quick global states */}
-          <div className="flex items-center gap-6 text-xs text-slate-500 font-medium">
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-slate-400" />
-              <span>
-                Audited: <strong className="text-slate-800">{new Date(selectedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</strong>
-              </span>
+          {/* Quick global states & User Info dropdown */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6 text-xs text-slate-500 font-medium">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-slate-400" />
+                <span>
+                  Audited: <strong className="text-slate-800">{new Date(selectedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</strong>
+                </span>
+              </div>
+              <div className="w-px h-6 bg-slate-100"></div>
+              <div>
+                Total Registered: <strong className="text-slate-800">{totalGlobalStudents} Students</strong>
+              </div>
             </div>
-            <div className="w-px h-6 bg-slate-100"></div>
-            <div>
-              Total Rregistered: <strong className="text-slate-800">{totalGlobalStudents} Students</strong>
+
+            <div className="w-px h-6 bg-slate-100 hidden sm:block"></div>
+
+            {/* Profile Avatar Badge with Secure Logout Trigger */}
+            <div className="flex items-center gap-3 bg-indigo-50/45 hover:bg-indigo-50 border border-indigo-100/50 pl-2 pr-3.5 py-1.5 rounded-2xl transition duration-150">
+              <div className="w-7 h-7 rounded-lg bg-indigo-650 text-white font-black flex items-center justify-center text-xs shadow-xs capitalize">
+                {currentUser.fullName ? currentUser.fullName.charAt(0) : currentUser.email.charAt(0)}
+              </div>
+              <div className="text-left">
+                <span className="block text-[10px] font-extrabold text-indigo-950 font-display leading-tight truncate max-w-[120px]">
+                  {currentUser.fullName || 'Academic Officer'}
+                </span>
+                <span className="block text-[8px] text-slate-400 font-semibold leading-tight select-all">
+                  {currentUser.email}
+                </span>
+              </div>
+              <div className="w-px h-4 bg-indigo-100/70 ml-1"></div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="p-1 hover:bg-rose-50 hover:text-rose-600 text-slate-400 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
+                title="Log out of Secure Session"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         </div>

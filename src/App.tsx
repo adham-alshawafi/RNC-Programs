@@ -511,6 +511,18 @@ export default function App() {
     setStudents(prev => [...prev, newStudent]);
   };
 
+  const handleAddStudentsBatch = (newStudentsList: { name: string; intake?: string }[]) => {
+    setStudents(prev => {
+      const added = newStudentsList.map((s, index) => ({
+        id: `std-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 7)}`,
+        name: s.name,
+        sectionId: activeSectionId,
+        intake: s.intake?.trim() || 'Default Intake',
+      }));
+      return [...prev, ...added];
+    });
+  };
+
   const handleEditStudent = (id: string, newName: string, newIntake?: string) => {
     setStudents(prev => prev.map(s => s.id === id ? { ...s, name: newName, intake: newIntake?.trim() || 'Default Intake' } : s));
   };
@@ -1151,6 +1163,7 @@ export default function App() {
                   onAddStudent={handleAddStudent}
                   onEditStudent={handleEditStudent}
                   onDeleteStudent={handleDeleteStudent}
+                  onAddStudentsBatch={handleAddStudentsBatch}
                 />
               )}
 
@@ -1164,6 +1177,7 @@ export default function App() {
                   selectedDate={selectedDate}
                   onSubmitDate={handleSubmitDate}
                   holidays={holidays}
+                  onSelectSectionId={setActiveSectionId}
                 />
               )}
             </div>

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Award, AlertTriangle, Percent, ArrowUpDown, Flame, TrendingUp, Users, Download, Calendar, RefreshCw, SlidersHorizontal, ArrowRight, Activity, ArrowUpRight, ArrowDownRight, Sparkles, CheckCheck, Loader2, RotateCcw, X } from 'lucide-react';
+import { Award, AlertTriangle, Percent, ArrowUpDown, Flame, TrendingUp, Users, Download, Calendar, RefreshCw, SlidersHorizontal, ArrowRight, Activity, ArrowUpRight, ArrowDownRight, Sparkles, CheckCheck, Loader2, RotateCcw, X, FileSpreadsheet, LogOut, Check, BookOpen } from 'lucide-react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -14,6 +14,8 @@ import {
   Legend,
 } from 'recharts';
 import { Student, AttendanceMap, Section } from '../types';
+import { initAuth, googleSignIn, logout } from '../lib/firebaseAuth';
+import { User } from 'firebase/auth';
 
 const COLOR_PALETTE = [
   { id: 'indigo', hex: '#4f46e5', bg: 'bg-indigo-50/70', border: 'border-indigo-200/50', text: 'text-indigo-700', dot: 'bg-indigo-600' },
@@ -35,6 +37,7 @@ interface AttendanceCalculatorProps {
   selectedDate?: string;
   onSubmitDate?: (date: string, sectionId: string) => void;
   holidays: Record<string, string[]>;
+  onSelectSectionId?: (sectionId: string) => void;
 }
 
 export default function AttendanceCalculator({
@@ -46,9 +49,52 @@ export default function AttendanceCalculator({
   selectedDate,
   onSubmitDate,
   holidays,
+  onSelectSectionId,
 }: AttendanceCalculatorProps) {
   const [sortField, setSortField] = useState<'name' | 'percentage'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Local Google Sheets States
+  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [isExportingSheets, setIsExportingSheets] = useState<boolean>(false);
+  const [exportedSheetUrl, setExportedSheetUrl] = useState<string | null>(null);
+  const [sheetsError, setSheetsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        setGoogleToken(token);
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleToken(null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  const handleConnectSheets = async () => {
+    try {
+      setSheetsError(null);
+      const result = await googleSignIn();
+      if (result) {
+        setGoogleUser(result.user);
+        setGoogleToken(result.accessToken);
+      }
+    } catch (err: any) {
+      setSheetsError(err.message || 'Failed to authenticate Google Sheets scope');
+    }
+  };
+
+  const handleDisconnectSheets = async () => {
+    await logout();
+    setGoogleUser(null);
+    setGoogleToken(null);
+    setExportedSheetUrl(null);
+    setSheetsError(null);
+  };
 
   // Local Calculation Submission States
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
@@ -116,6 +162,13 @@ export default function AttendanceCalculator({
 
   // Attendance Status Filter state
   const [attendanceStatusFilter, setAttendanceStatusFilter] = useState<'all' | 'at_risk' | 'perfect'>('all');
+
+  // Class Section Dropdown Filter state
+  const [classDropdownFilter, setClassDropdownFilter] = useState<string>('active');
+
+  useEffect(() => {
+    setClassDropdownFilter(activeSection.id);
+  }, [activeSection.id]);
 
   // Helper to resolve stable section colors
   const getSectionColor = (secId: string) => {
@@ -305,8 +358,108 @@ export default function AttendanceCalculator({
   const lowestAttender = [...studentCalculations]
     .sort((a, b) => a.percentage - b.percentage)[0];
 
+  // Resolve audit students list and perform detailed attendance mapping
+  const auditStudents = (() => {
+    if (classDropdownFilter === 'active') {
+      return students.filter(s => s.sectionId === activeSection.id);
+    }
+    if (classDropdownFilter === 'all') {
+      return students;
+    }
+    return students.filter(s => s.sectionId === classDropdownFilter);
+  })();
+
+  const auditCalculations = auditStudents.map(student => {
+    const studentSectionDates = submittedDates[student.sectionId] || [];
+    const studentSectionHolidays = holidays[student.sectionId] || [];
+    
+    const studentFilteredDates = studentSectionDates.filter(date => {
+      if (startDate && date < startDate) return false;
+      if (endDate && date > endDate) return false;
+      if (studentSectionHolidays.includes(date)) return false;
+      return true;
+    });
+
+    const studentTrackedDays = studentFilteredDates.length;
+
+    let presentCount = 0;
+    let absentCount = 0;
+
+    let weekPresent = 0;
+    let weekTotal = 0;
+
+    let monthPresent = 0;
+    let monthTotal = 0;
+
+    studentFilteredDates.forEach(date => {
+      const records = attendance[date] || {};
+      const status = records[student.id];
+      const isPresent = status === 'present';
+      
+      if (isPresent) {
+        presentCount++;
+      } else if (status === 'absent') {
+        absentCount++;
+      } else {
+        absentCount++;
+      }
+
+      if (currentWeekDates.includes(date)) {
+        weekTotal++;
+        if (isPresent) weekPresent++;
+      }
+
+      if (date.startsWith(currentMonthPrefix)) {
+        monthTotal++;
+        if (isPresent) monthPresent++;
+      }
+    });
+
+    const attendancePercentage = studentTrackedDays > 0 
+      ? Math.round((presentCount / studentTrackedDays) * 100) 
+      : 100;
+
+    const weekPercentage = weekTotal > 0
+      ? Math.round((weekPresent / weekTotal) * 100)
+      : null;
+
+    const monthPercentage = monthTotal > 0
+      ? Math.round((monthPresent / monthTotal) * 100)
+      : null;
+
+    return {
+      student,
+      presentCount,
+      absentCount,
+      percentage: attendancePercentage,
+      weekPercentage,
+      monthPercentage,
+      weekPresent,
+      weekTotal,
+      monthPresent,
+      monthTotal,
+      trackedDaysCount: studentTrackedDays,
+    };
+  });
+
+  const auditHasTrackedDays = (() => {
+    if (classDropdownFilter === 'all') {
+      return Object.values(submittedDates).some(dates => dates.length > 0);
+    }
+    if (classDropdownFilter === 'active') {
+      return sectionSubmittedDates.length > 0;
+    }
+    return (submittedDates[classDropdownFilter] || []).length > 0;
+  })();
+
   // Export active section attendance stats to CSV
   const handleExportCSV = () => {
+    const auditSectionName = (() => {
+      if (classDropdownFilter === 'active') return activeSection.name;
+      if (classDropdownFilter === 'all') return 'All Classes';
+      return sections.find(s => s.id === classDropdownFilter)?.name || 'Audited Class';
+    })();
+
     const headers = [
       'Student ID',
       'Student Name',
@@ -317,11 +470,11 @@ export default function AttendanceCalculator({
       'Attendance Rate'
     ];
 
-    const rows = sortedCalculations.map(({ student, presentCount, absentCount, percentage }) => [
+    const rows = sortedCalculations.map(({ student, presentCount, absentCount, percentage, trackedDaysCount }) => [
       student.id,
       student.name,
-      activeSection.name,
-      totalTrackedDays,
+      sections.find(s => s.id === student.sectionId)?.name || 'Default',
+      trackedDaysCount,
       presentCount,
       absentCount,
       `${percentage}%`
@@ -343,12 +496,121 @@ export default function AttendanceCalculator({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${activeSection.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')}_attendance_report.csv`;
+    link.download = `${auditSectionName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')}_attendance_report.csv`;
     link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportToGoogleSheets = async () => {
+    if (!googleToken) {
+      await handleConnectSheets();
+      return;
+    }
+
+    const auditSectionName = (() => {
+      if (classDropdownFilter === 'active') return activeSection.name;
+      if (classDropdownFilter === 'all') return 'All Classes';
+      return sections.find(s => s.id === classDropdownFilter)?.name || 'Audited Class';
+    })();
+
+    const confirmed = window.confirm(
+      `Export ${sortedCalculations.length} students' attendance stats from "${auditSectionName}" to Google Sheets?`
+    );
+    if (!confirmed) return;
+
+    setIsExportingSheets(true);
+    setSheetsError(null);
+    setExportedSheetUrl(null);
+
+    const headers = [
+      'Student ID',
+      'Student Name',
+      'Intake Period',
+      'Section Name',
+      'Total Academic Days',
+      'Days Present',
+      'Days Absent',
+      'Weekly Attendance Rate',
+      'Monthly Attendance Rate',
+      'Overall Attendance Rate'
+    ];
+
+    const rows = sortedCalculations.map(({ student, presentCount, absentCount, percentage, weekPercentage, monthPercentage, trackedDaysCount }) => [
+      student.id,
+      student.name,
+      student.intake || 'Default Intake',
+      sections.find(s => s.id === student.sectionId)?.name || 'Default',
+      trackedDaysCount,
+      presentCount,
+      absentCount,
+      weekPercentage !== null ? `${weekPercentage}%` : '—',
+      monthPercentage !== null ? `${monthPercentage}%` : '—',
+      `${percentage}%`
+    ]);
+
+    try {
+      // 1. Create Spreadsheet
+      const createResponse = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${googleToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          properties: {
+            title: `${auditSectionName} - Attendance Report (${new Date().toLocaleDateString()})`
+          }
+        })
+      });
+
+      if (createResponse.status === 401) {
+        // Token expired
+        setGoogleToken(null);
+        throw new Error('Your Google session has expired. Please authenticate again to export.');
+      }
+
+      if (!createResponse.ok) {
+        const errorBody = await createResponse.json().catch(() => ({}));
+        throw new Error(errorBody.error?.message || `Spreadsheet creation failed with status ${createResponse.status}`);
+      }
+
+      const sheetInfo = await createResponse.json();
+      const spreadsheetId = sheetInfo.spreadsheetId;
+      const spreadsheetUrl = sheetInfo.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+
+      // 2. Put values on Sheet1
+      const populateResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${googleToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          values: [
+            headers,
+            ...rows
+          ]
+        })
+      });
+
+      if (!populateResponse.ok) {
+        const errorBody = await populateResponse.json().catch(() => ({}));
+        if (populateResponse.status === 401) {
+          setGoogleToken(null);
+        }
+        throw new Error(errorBody.error?.message || `Failed to populate spreadsheet data (${populateResponse.status})`);
+      }
+
+      setExportedSheetUrl(spreadsheetUrl);
+    } catch (err: any) {
+      console.error('Workspace Google Sheets integration error:', err);
+      setSheetsError(err.message || 'Failed to export report to Google Sheets.');
+    } finally {
+      setIsExportingSheets(false);
+    }
   };
 
   // Sorting handlers
@@ -361,10 +623,10 @@ export default function AttendanceCalculator({
     }
   };
 
-  const filteredCalculations = studentCalculations.filter(item => {
+  const filteredCalculations = auditCalculations.filter(item => {
     if (attendanceStatusFilter === 'all') return true;
-    if (attendanceStatusFilter === 'at_risk') return item.percentage < 75 && totalTrackedDays > 0;
-    if (attendanceStatusFilter === 'perfect') return item.percentage === 100 && totalTrackedDays > 0;
+    if (attendanceStatusFilter === 'at_risk') return item.percentage < 75 && item.trackedDaysCount > 0;
+    if (attendanceStatusFilter === 'perfect') return item.percentage === 100 && item.trackedDaysCount > 0;
     return true;
   });
 
@@ -798,44 +1060,242 @@ export default function AttendanceCalculator({
             <h3 className="text-sm font-semibold text-slate-800 font-display">Student Performance Audits</h3>
             <p className="text-xs text-slate-400">Sort, query, and download complete roll averages</p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="text-xs font-semibold text-indigo-600 flex items-center gap-1 bg-indigo-50/50 px-2.5 py-1.5 rounded-lg select-none">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-[11px] font-bold text-indigo-600 flex items-center gap-1 bg-indigo-50/70 px-2.5 py-1.5 rounded-xl select-none">
               <Users className="w-3.5 h-3.5" />
-              <span>{totalStudents} Audit Rows</span>
+              <span>{totalStudents} Students</span>
             </div>
             {totalStudents > 0 && (
-              <button
-                id="export-csv-btn"
-                onClick={handleExportCSV}
-                className="text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 hover:scale-[1.01] active:scale-[0.99] transition-all duration-150 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-700/10 shadow-xs shadow-indigo-100 cursor-pointer"
-                title="Download CSV report of current attendance statistics"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export CSV</span>
-              </button>
+              <>
+                {/* Standard CSV Exporter */}
+                <button
+                  id="export-csv-btn"
+                  onClick={handleExportCSV}
+                  className="text-xs font-bold text-slate-705 bg-white hover:bg-slate-50 border border-slate-205 hover:border-slate-300 active:scale-[0.99] transition-all duration-150 flex items-center gap-1.5 px-3.5 py-2 rounded-xl shadow-2xs cursor-pointer select-none"
+                  title="Download standard CSV report"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>CSV</span>
+                </button>
+
+                {/* Google Sheets Sync integration */}
+                {!googleUser ? (
+                  <button
+                    id="connect-sheets-btn"
+                    type="button"
+                    onClick={handleConnectSheets}
+                    className="text-xs font-black bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/50 active:scale-[0.99] transition-all duration-150 flex items-center gap-1.5 px-3.5 py-2 rounded-xl cursor-pointer"
+                    title="Connect Google Sheets to export live spreadsheets"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Connect Sheets</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1.5 bg-emerald-50/40 border border-emerald-100/50 p-1 rounded-xl">
+                    <button
+                      id="export-sheets-btn"
+                      type="button"
+                      onClick={handleExportToGoogleSheets}
+                      disabled={isExportingSheets}
+                      className="text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] transition-all duration-150 flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg disabled:opacity-70 cursor-pointer"
+                      title="Export this report direct to Google Sheets"
+                    >
+                      {isExportingSheets ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                      )}
+                      <span>{isExportingSheets ? 'Exporting...' : 'Export Sheets'}</span>
+                    </button>
+                    
+                    {/* Google profile widget / log out option */}
+                    <div className="flex items-center gap-1.5 pr-2 pl-1 select-none" title={`Connected as ${googleUser.email}`}>
+                      {googleUser.photoURL ? (
+                        <img 
+                          src={googleUser.photoURL} 
+                          alt="Google Profile" 
+                          referrerPolicy="no-referrer"
+                          className="w-5 h-5 rounded-full border border-emerald-200 shadow-3xs hover:border-emerald-400 transition-colors"
+                        />
+                      ) : (
+                        <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 font-black text-[9px] flex items-center justify-center">
+                          {googleUser.email?.substring(0, 1).toUpperCase()}
+                        </span>
+                      )}
+                      <button 
+                        type="button"
+                        onClick={handleDisconnectSheets} 
+                        className="text-slate-400 hover:text-rose-600 transition p-0.5 rounded cursor-pointer"
+                        title="Disconnect Google account"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
 
-        {/* Dropdown Filter above the student table */}
-        {totalStudents > 0 && totalTrackedDays > 0 && (
-          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/20 flex flex-col md:flex-row md:items-center justify-between gap-4 select-none">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full md:w-auto">
-              <span className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 shrink-0">
-                <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
-                <span>Filter by Performance:</span>
+        {/* Class Section Click-Point Filter */}
+        <div className="px-6 py-4.5 border-b border-slate-100 bg-linear-to-r from-slate-50/20 via-slate-50/10 to-transparent">
+          <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <span className="text-[10px] font-black text-indigo-750 uppercase tracking-widest bg-indigo-50 border border-indigo-150/35 px-2.5 py-1 rounded-full w-fit flex items-center gap-1 select-none">
+                <BookOpen className="w-3 h-3 text-indigo-500 animate-pulse" />
+                <span>English Classes Directory</span>
               </span>
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <div className="relative w-full sm:w-auto">
-                  <select
-                    id="attendance-status-filter-dropdown"
-                    value={attendanceStatusFilter}
-                    onChange={(e) => setAttendanceStatusFilter(e.target.value as any)}
-                    className="w-full sm:w-56 appearance-none bg-white border border-slate-200 hover:border-slate-300 text-slate-700 text-xs font-bold rounded-xl pl-3 pr-8 py-2 outline-none cursor-pointer transition focus:ring-2 focus:ring-indigo-150 focus:border-indigo-500 shadow-2xs"
+              <p className="text-[10px] text-slate-400 font-bold sm:text-right">Click class pill to instantly select and audit student averages</p>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              {sections.map(sec => {
+                const isActive = sec.id === activeSection.id;
+                const count = students.filter(s => s.sectionId === sec.id).length;
+                
+                // Let's identify the group style/color based on section name
+                const isEnglishProg = sec.programId === 'prog-english';
+                
+                return (
+                  <button
+                    key={sec.id}
+                    type="button"
+                    onClick={() => {
+                      if (onSelectSectionId) {
+                        onSelectSectionId(sec.id);
+                      }
+                    }}
+                    className={`text-xs font-bold px-3.5 py-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition-all duration-150 relative overflow-hidden select-none active:scale-[0.98] ${
+                      isActive
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-100 font-black'
+                        : isEnglishProg
+                        ? 'bg-white hover:bg-indigo-50/30 border-slate-200/90 hover:border-indigo-200 text-slate-650 hover:text-indigo-850'
+                        : 'bg-white hover:bg-emerald-50/30 border-slate-200/90 hover:border-emerald-200 text-slate-650 hover:text-emerald-850'
+                    }`}
                   >
-                    <option value="all">All Students ({totalStudents})</option>
-                    <option value="at_risk">At-Risk Cases (Below 75%)</option>
-                    <option value="perfect">Perfect Records (100%)</option>
+                    {isActive ? (
+                      <Check className="w-3.5 h-3.5 text-white shrink-0" />
+                    ) : (
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        isEnglishProg ? 'bg-indigo-500/70' : 'bg-emerald-500/70'
+                      }`} />
+                    )}
+                    <span>{sec.name}</span>
+                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full transition-colors ${
+                      isActive 
+                        ? 'bg-indigo-750 text-indigo-100' 
+                        : isEnglishProg
+                        ? 'bg-indigo-50/50 text-indigo-700'
+                        : 'bg-emerald-50/50 text-emerald-700'
+                    }`}>
+                      {count} {count === 1 ? 'std' : 'stds'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Google Sheets Alerts */}
+        <AnimatePresence>
+          {exportedSheetUrl && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="px-6 py-3.5 bg-emerald-50/90 border-b border-emerald-200/60 text-emerald-800 flex items-center justify-between gap-4 text-xs font-bold animate-fade-in"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg shrink-0 animate-bounce">
+                  <Check className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="font-semibold text-emerald-900">Attendance Report Exported!</p>
+                  <p className="text-[10px] text-emerald-600 font-medium font-sans">A live spreadsheet was successfully assembled in your Google Drive.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <a 
+                  href={exportedSheetUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 hover:scale-[1.01] active:scale-[0.99] transition-all text-white font-extrabold text-[11px] rounded-lg shadow-sm shadow-emerald-100 inline-flex items-center gap-1"
+                >
+                  <span>Open Spreadsheet</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </a>
+                <button 
+                  type="button"
+                  onClick={() => setExportedSheetUrl(null)} 
+                  className="p-1 bg-white border border-emerald-200 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-900 rounded-lg transition cursor-pointer"
+                  title="Dismiss alert"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {sheetsError && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="px-6 py-3.5 bg-rose-50 border-b border-rose-200 text-rose-800 flex items-center justify-between gap-4 text-xs font-bold animate-fade-in"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-rose-100 text-rose-800 rounded-lg shrink-0">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="font-semibold text-rose-900 font-sans">Spreadsheet Export Failed</p>
+                  <p className="text-[10px] text-rose-500 font-medium">{sheetsError}</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setSheetsError(null)} 
+                className="p-1 bg-white border border-rose-200 hover:bg-rose-100 text-rose-700 hover:text-rose-900 rounded-lg transition cursor-pointer shrink-0"
+                title="Dismiss alert"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Dropdown Filter above the student table */}
+        {students.length > 0 && (
+          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/20 flex flex-col md:flex-row md:items-center justify-between gap-4 select-none">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full md:w-auto">
+              {/* Class Level Dropdown Filter */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+                <span className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 shrink-0">
+                  <BookOpen className="w-3.5 h-3.5 text-indigo-505" />
+                  <span>Class Level:</span>
+                </span>
+                <div className="relative w-full sm:w-48">
+                  <select
+                    id="class-proficiency-level-dropdown"
+                    value={classDropdownFilter}
+                    onChange={(e) => {
+                      setClassDropdownFilter(e.target.value);
+                      setAttendanceStatusFilter('all');
+                    }}
+                    className="w-full appearance-none bg-white border border-slate-200 hover:border-slate-300 text-slate-700 text-xs font-bold rounded-xl pl-3 pr-8 py-2 outline-none cursor-pointer transition focus:ring-2 focus:ring-indigo-150 focus:border-indigo-500 shadow-2xs"
+                  >
+                    <option value="active">Active: {activeSection.name}</option>
+                    <option value="all">All Classes Combined ({students.length})</option>
+                    {sections.map(sec => {
+                      const count = students.filter(s => s.sectionId === sec.id).length;
+                      return (
+                        <option key={sec.id} value={sec.id}>
+                          {sec.name} ({count} {count === 1 ? 'std' : 'stds'})
+                        </option>
+                      );
+                    })}
                   </select>
                   <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
                     <svg className="fill-current h-4 w-4" viewBox="0 0 20 20">
@@ -843,48 +1303,71 @@ export default function AttendanceCalculator({
                     </svg>
                   </div>
                 </div>
+              </div>
 
-                {attendanceStatusFilter !== 'all' && (
-                  <button
-                    type="button"
-                    onClick={() => setAttendanceStatusFilter('all')}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 hover:text-indigo-700 rounded-xl transition duration-150 text-xs font-bold shrink-0 cursor-pointer active:scale-95 border border-indigo-100/50"
-                    title="Clear filter and show all students"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Reset</span>
-                  </button>
-                )}
+              {/* Performance Dropdown Filter */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+                <span className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 shrink-0">
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Performance:</span>
+                </span>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="relative w-full sm:w-44">
+                    <select
+                      id="attendance-status-filter-dropdown"
+                      value={attendanceStatusFilter}
+                      onChange={(e) => setAttendanceStatusFilter(e.target.value as any)}
+                      className="w-full appearance-none bg-white border border-slate-200 hover:border-slate-300 text-slate-705 text-xs font-bold rounded-xl pl-3 pr-8 py-2 outline-none cursor-pointer transition focus:ring-2 focus:ring-indigo-150 focus:border-indigo-500 shadow-2xs"
+                    >
+                      <option value="all">All Students ({auditStudents.length})</option>
+                      <option value="at_risk">At-Risk Cases (Below 75%)</option>
+                      <option value="perfect">Perfect Records (100%)</option>
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                      <svg className="fill-current h-4 w-4" viewBox="0 0 20 20">
+                        <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {(attendanceStatusFilter !== 'all' || classDropdownFilter !== 'active') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAttendanceStatusFilter('all');
+                        setClassDropdownFilter('active');
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 hover:text-indigo-700 rounded-xl transition duration-150 text-xs font-bold shrink-0 cursor-pointer active:scale-95 border border-indigo-100/50"
+                      title="Clear performance and level filters"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reset</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
             <div className="flex items-center gap-3 shrink-0 text-xs text-slate-400 font-bold self-end md:self-auto">
               <span>Showing:</span>
               <span className="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100/50">
-                {filteredCalculations.length} / {totalStudents} students
+                {filteredCalculations.length} / {auditStudents.length} students
               </span>
             </div>
           </div>
         )}
 
-        {totalStudents === 0 ? (
+        {auditStudents.length === 0 ? (
           <div className="py-12 text-center text-slate-400 text-xs">
-            Add student records to view active percentages and analytics here.
+            No student records registered under this proficiency class. Add students under Student Settings.
           </div>
-        ) : totalTrackedDays === 0 ? (
+        ) : !auditHasTrackedDays ? (
           <div className="py-12 text-center text-slate-401 text-xs flex flex-col items-center justify-center gap-2 bg-slate-50/10 min-h-[220px]">
             <SlidersHorizontal className="w-8 h-8 text-indigo-400/80 animate-pulse" />
-            <p className="font-semibold text-slate-600">No attendance records found for the selected date range.</p>
+            <p className="font-semibold text-slate-600">No attendance records found for this class level.</p>
             <p className="text-[10px] text-slate-400 max-w-xs leading-normal">
-              No roll-call lists were submitted or finalized for the period between {startDate || 'all-time'} and {endDate || 'all-time'}.
+              No roll-call lists were submitted or finalized for this class level. Submit a roll sheet or change class levels to audit.
             </p>
-            <button
-              type="button"
-              onClick={() => applyPreset('all')}
-              className="mt-2.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xxs font-extrabold cursor-pointer transition-colors"
-            >
-              Reset to All-Time
-            </button>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -931,9 +1414,9 @@ export default function AttendanceCalculator({
                     </td>
                   </tr>
                 ) : (
-                  sortedCalculations.map(({ student, presentCount, absentCount, percentage, weekPercentage, monthPercentage }) => {
-                    const isWarning = percentage < 75 && totalTrackedDays > 0;
-                    const isGold = percentage === 100 && totalTrackedDays > 0;
+                  sortedCalculations.map(({ student, presentCount, absentCount, percentage, weekPercentage, monthPercentage, trackedDaysCount }) => {
+                    const isWarning = percentage < 75 && trackedDaysCount > 0;
+                    const isGold = percentage === 100 && trackedDaysCount > 0;
 
                     return (
                       <tr key={student.id} className="hover:bg-slate-50/30 transition">
@@ -981,12 +1464,12 @@ export default function AttendanceCalculator({
 
                         {/* Attended Count */}
                         <td className="px-4 py-3.5 text-center font-mono font-bold text-slate-500">
-                          <span className="text-emerald-600">{presentCount}</span> / {totalTrackedDays}
+                          <span className="text-emerald-600">{presentCount}</span> / {trackedDaysCount}
                         </td>
 
                         {/* Absent Count */}
                         <td className="px-4 py-3.5 text-center font-mono font-bold text-slate-500">
-                          <span className="text-rose-500">{absentCount}</span> / {totalTrackedDays}
+                          <span className="text-rose-500">{absentCount}</span> / {trackedDaysCount}
                         </td>
 
                         {/* Percentage & Progress Bar */}

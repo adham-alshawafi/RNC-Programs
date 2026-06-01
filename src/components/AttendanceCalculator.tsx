@@ -168,33 +168,128 @@ export default function AttendanceCalculator({
 
   const totalTrackedDays = filteredSubmittedDates.length;
 
+  // Helper to find dates in current week containing dateToUse
+  const getWeekDates = (baseDateStr: string): string[] => {
+    try {
+      const d = new Date(baseDateStr + 'T00:00:00');
+      const day = d.getDay();
+      const diffToMonday = day === 0 ? -6 : 1 - day;
+      const monday = new Date(d);
+      monday.setDate(d.getDate() + diffToMonday);
+      
+      const dates: string[] = [];
+      for (let i = 0; i < 7; i++) {
+        const nextD = new Date(monday);
+        nextD.setDate(monday.getDate() + i);
+        const yyyy = nextD.getFullYear();
+        const mm = String(nextD.getMonth() + 1).padStart(2, '0');
+        const dd = String(nextD.getDate()).padStart(2, '0');
+        dates.push(`${yyyy}-${mm}-${dd}`);
+      }
+      return dates;
+    } catch (e) {
+      return [baseDateStr];
+    }
+  };
+
+  const currentWeekDates = getWeekDates(dateToUse);
+  const currentMonthPrefix = dateToUse.substring(0, 7); // e.g. "2026-06"
+
   // Compile calculations for each student in the active section
   const studentCalculations = sectionStudents.map(student => {
     let presentCount = 0;
     let absentCount = 0;
 
+    let weekPresent = 0;
+    let weekTotal = 0;
+
+    let monthPresent = 0;
+    let monthTotal = 0;
+
     filteredSubmittedDates.forEach(date => {
       const records = attendance[date] || {};
-      if (records[student.id] === 'present') {
+      const status = records[student.id];
+      const isPresent = status === 'present';
+      
+      if (isPresent) {
         presentCount++;
-      } else if (records[student.id] === 'absent') {
-        // Explicitly marked absent
+      } else if (status === 'absent') {
         absentCount++;
       } else {
-        // If they exist but not marked on that general date, treat as absent or skip
         absentCount++;
+      }
+
+      // Week calculation
+      if (currentWeekDates.includes(date)) {
+        weekTotal++;
+        if (isPresent) weekPresent++;
+      }
+
+      // Month calculation
+      if (date.startsWith(currentMonthPrefix)) {
+        monthTotal++;
+        if (isPresent) monthPresent++;
       }
     });
 
     const attendancePercentage = totalTrackedDays > 0 
       ? Math.round((presentCount / totalTrackedDays) * 100) 
-      : 100; // default to 100 if no days tracked yet
+      : 100;
+
+    const weekPercentage = weekTotal > 0
+      ? Math.round((weekPresent / weekTotal) * 100)
+      : null;
+
+    const monthPercentage = monthTotal > 0
+      ? Math.round((monthPresent / monthTotal) * 100)
+      : null;
 
     return {
       student,
       presentCount,
       absentCount,
       percentage: attendancePercentage,
+      weekPercentage,
+      monthPercentage,
+      weekPresent,
+      weekTotal,
+      monthPresent,
+      monthTotal,
+    };
+  });
+
+  // Group student calculations by Intake
+  const intakeGroups = Array.from(
+    new Set(sectionStudents.map(s => s.intake || 'Default Intake'))
+  ).map(intakeName => {
+    const cohortStudents = studentCalculations.filter(c => (c.student.intake || 'Default Intake') === intakeName);
+    const studentCount = cohortStudents.length;
+    
+    // Average percentage for this cohort (using cumulative)
+    const avgPercentage = studentCount > 0
+      ? Math.round(cohortStudents.reduce((sum, item) => sum + item.percentage, 0) / studentCount)
+      : 100;
+
+    const avgWeekPercentage = studentCount > 0
+      ? (() => {
+          const items = cohortStudents.map(c => c.weekPercentage).filter((p): p is number => p !== null);
+          return items.length > 0 ? Math.round(items.reduce((sum, p) => sum + p, 0) / items.length) : null;
+        })()
+      : null;
+
+    const avgMonthPercentage = studentCount > 0
+      ? (() => {
+          const items = cohortStudents.map(c => c.monthPercentage).filter((p): p is number => p !== null);
+          return items.length > 0 ? Math.round(items.reduce((sum, p) => sum + p, 0) / items.length) : null;
+        })()
+      : null;
+
+    return {
+      name: intakeName,
+      studentCount,
+      avgPercentage,
+      avgWeekPercentage,
+      avgMonthPercentage,
     };
   });
 
@@ -540,6 +635,69 @@ export default function AttendanceCalculator({
         </div>
       </div>
 
+      {/* Active Intakes Cohort Directory Section */}
+      <div id="intake-cohorts-summary-box" className="bg-white rounded-2xl border border-slate-100 shadow-xs p-5 space-y-4">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-indigo-50 text-indigo-700 rounded-xl">
+            <Activity className="w-4 h-4" />
+          </div>
+          <div>
+            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider font-display">Active Intakes Cohort Directory</h4>
+            <p className="text-[10px] text-slate-400 font-medium">Headcounts and rolling average attendance grouped by class intake period</p>
+          </div>
+        </div>
+
+        {intakeGroups.length === 0 ? (
+          <div className="text-xs text-slate-400 py-4 text-center bg-slate-50 rounded-xl">
+            No student cohorts or intakes registered. Specify intakes in Student Directory.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {intakeGroups.map((grp) => {
+              const hasMonth = grp.avgMonthPercentage !== null;
+              const hasWeek = grp.avgWeekPercentage !== null;
+              return (
+                <div 
+                  key={grp.name} 
+                  className="bg-slate-50/50 hover:bg-slate-50 border border-slate-150/60 hover:border-slate-300 rounded-xl p-4 space-y-3.5 transition-all duration-200 shadow-2xs relative overflow-hidden group"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Intake Period</span>
+                      <span className="font-bold text-slate-800 text-xs truncate max-w-[130px] block mt-0.5" title={grp.name}>{grp.name}</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[9px] font-black shrink-0">
+                      {grp.studentCount} {grp.studentCount === 1 ? 'std' : 'stds'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1 divide-x divide-slate-100 bg-white p-2 rounded-lg border border-slate-100">
+                    <div className="text-center">
+                      <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tight block">Weekly</span>
+                      <span className="font-mono text-[10px] font-black text-slate-700 block mt-0.5">
+                        {hasWeek ? `${grp.avgWeekPercentage}%` : '—'}
+                      </span>
+                    </div>
+                    <div className="text-center">
+                      <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tight block">Monthly</span>
+                      <span className="font-mono text-[10px] font-black text-slate-700 block mt-0.5">
+                        {hasMonth ? `${grp.avgMonthPercentage}%` : '—'}
+                      </span>
+                    </div>
+                    <div className="text-center">
+                      <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tight block">Overall</span>
+                      <span className="font-mono text-[10px] font-black text-indigo-600 block mt-0.5">
+                        {grp.avgPercentage}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Date Filter Panel */}
       <div id="date-filter-panel" className="bg-white rounded-2xl border border-slate-100 shadow-xs p-5 space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -773,28 +931,51 @@ export default function AttendanceCalculator({
                     </td>
                   </tr>
                 ) : (
-                  sortedCalculations.map(({ student, presentCount, absentCount, percentage }) => {
+                  sortedCalculations.map(({ student, presentCount, absentCount, percentage, weekPercentage, monthPercentage }) => {
                     const isWarning = percentage < 75 && totalTrackedDays > 0;
                     const isGold = percentage === 100 && totalTrackedDays > 0;
 
                     return (
                       <tr key={student.id} className="hover:bg-slate-50/30 transition">
-                        {/* Name with tag */}
+                        {/* Name with tag folders */}
                         <td className="pl-6 pr-4 py-3.5 align-middle">
-                          <div className="flex items-center gap-2.5 min-w-[200px]">
-                            <span className="font-semibold text-slate-700">{student.name}</span>
-                            {isWarning && (
-                              <span className="px-1.5 py-0.5 bg-rose-50 text-rose-600 border border-rose-100 rounded text-[9px] font-bold flex items-center gap-0.5 shrink-0">
-                                <AlertTriangle className="w-2.5 h-2.5" />
-                                Critical
+                          <div className="flex flex-col gap-1 min-w-[220px]">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-slate-700">{student.name}</span>
+                              {isWarning && (
+                                <span className="px-1.5 py-0.5 bg-rose-50 text-rose-600 border border-rose-100 rounded text-[9px] font-bold flex items-center gap-0.5 shrink-0">
+                                  <AlertTriangle className="w-2.5 h-2.5" />
+                                  Critical
+                                </span>
+                              )}
+                              {isGold && (
+                                <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-100 rounded text-[9px] font-bold flex items-center gap-0.5 shrink-0">
+                                  <Award className="w-2.5 h-2.5" />
+                                  Perfect
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Weekly, Monthly, and Intake percentage folders */}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1 select-none">
+                              <span className="px-1.5 py-0.5 rounded bg-amber-50/80 text-amber-800 border border-amber-200/40 text-[9px] font-extrabold flex items-center gap-1" title="Attendance this week (Monday to Sunday week window)">
+                                <span>Week:</span>
+                                <span className="font-mono">{weekPercentage !== null ? `${weekPercentage}%` : '—'}</span>
                               </span>
-                            )}
-                            {isGold && (
-                              <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-100 rounded text-[9px] font-bold flex items-center gap-0.5 shrink-0">
-                                <Award className="w-2.5 h-2.5" />
-                                Perfect
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-50/80 text-emerald-800 border border-emerald-200/40 text-[9px] font-extrabold flex items-center gap-1" title="Attendance this calendar month">
+                                <span>Month:</span>
+                                <span className="font-mono">{monthPercentage !== null ? `${monthPercentage}%` : '—'}</span>
                               </span>
-                            )}
+                              <span className="px-1.5 py-0.5 rounded bg-indigo-50/80 text-indigo-850 border border-indigo-200/40 text-[9px] font-extrabold flex items-center gap-1" title={`Intake average for: ${student.intake || 'Default Intake'}`}>
+                                <span>Intake ({student.intake || 'Default'}):</span>
+                                <span className="font-mono">
+                                  {(() => {
+                                    const grp = intakeGroups.find(g => g.name === (student.intake || 'Default Intake'));
+                                    return grp ? `${grp.avgPercentage}%` : '—';
+                                  })()}
+                                </span>
+                              </span>
+                            </div>
                           </div>
                         </td>
 

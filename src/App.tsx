@@ -501,17 +501,18 @@ export default function App() {
   };
 
   // 3. Student CRUD Actions
-  const handleAddStudent = (name: string, sectionId: string) => {
+  const handleAddStudent = (name: string, sectionId: string, intake?: string) => {
     const newStudent: Student = {
       id: `std-${Date.now()}`,
       name,
       sectionId,
+      intake: intake?.trim() || 'Default Intake',
     };
     setStudents(prev => [...prev, newStudent]);
   };
 
-  const handleEditStudent = (id: string, newName: string) => {
-    setStudents(prev => prev.map(s => s.id === id ? { ...s, name: newName } : s));
+  const handleEditStudent = (id: string, newName: string, newIntake?: string) => {
+    setStudents(prev => prev.map(s => s.id === id ? { ...s, name: newName, intake: newIntake?.trim() || 'Default Intake' } : s));
   };
 
   const handleDeleteStudent = (id: string) => {
@@ -1004,44 +1005,43 @@ export default function App() {
 
             {/* Grid of Choices */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-              {[
-                { id: 'sec-beginner', name: 'Beginner', label: 'beginner' },
-                { id: 'sec-pre-starter', name: 'Pre-starter', label: 'Pre-starter' },
-                { id: 'sec-starter', name: 'Starter', label: 'starter' },
-                { id: 'sec-elementary', name: 'Elementary', label: 'elementary' },
-                { id: 'sec-pre-int', name: 'Pre-Intermediate', label: 'pre-intermediate' },
-                { id: 'sec-intermediate', name: 'Intermediate', label: 'intermediate' }
-              ].map(group => {
-                const isSelected = activeSectionId === group.id;
-                const count = students.filter(s => s.sectionId === group.id).length;
-                
-                return (
-                  <button
-                    key={group.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveSectionId(group.id);
-                      setExpandedPrograms(prev => ({ ...prev, 'prog-english': true }));
-                    }}
-                    className={`relative p-3 rounded-xl border flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-150 ${
-                      isSelected
-                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100'
-                        : 'bg-slate-50/60 hover:bg-slate-100/80 border-slate-100 text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    <span className="text-[10px] font-bold font-display truncate max-w-full capitalize">
-                      {group.label}
-                    </span>
-                    <span className={`text-[9px] font-black mt-1 px-1.5 py-0.5 rounded-full ${
-                      isSelected 
-                        ? 'bg-indigo-700/50 text-indigo-100' 
-                        : 'bg-slate-100 text-slate-400'
-                    }`}>
-                      {count} stds
-                    </span>
-                  </button>
-                );
-              })}
+              {sections.length === 0 ? (
+                <p className="text-[11px] text-slate-400 italic py-2 col-span-full text-center">No class sections registered. Click "+Class" above to add one.</p>
+              ) : (
+                sections.map(group => {
+                  const isSelected = activeSectionId === group.id;
+                  const count = students.filter(s => s.sectionId === group.id).length;
+                  
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveSectionId(group.id);
+                        if (group.programId) {
+                          setExpandedPrograms(prev => ({ ...prev, [group.programId]: true }));
+                        }
+                      }}
+                      className={`relative p-3 rounded-xl border flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-150 ${
+                        isSelected
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100'
+                          : 'bg-slate-50/60 hover:bg-slate-100/85 border-slate-100 text-slate-500 hover:text-slate-805'
+                      }`}
+                    >
+                      <span className="text-[10px] font-bold font-display truncate max-w-full">
+                        {group.name}
+                      </span>
+                      <span className={`text-[9px] font-black mt-1 px-1.5 py-0.5 rounded-full ${
+                        isSelected 
+                          ? 'bg-indigo-750 text-indigo-100' 
+                          : 'bg-slate-100 text-slate-405'
+                      }`}>
+                        {count} stds
+                      </span>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </div>
 

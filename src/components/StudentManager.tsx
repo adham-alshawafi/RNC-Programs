@@ -8,8 +8,8 @@ interface StudentManagerProps {
   students: Student[];
   attendance: AttendanceMap;
   selectedDate: string;
-  onAddStudent: (name: string, sectionId: string) => void;
-  onEditStudent: (id: string, newName: string) => void;
+  onAddStudent: (name: string, sectionId: string, intake?: string) => void;
+  onEditStudent: (id: string, newName: string, newIntake?: string) => void;
   onDeleteStudent: (id: string) => void;
 }
 
@@ -23,9 +23,11 @@ export default function StudentManager({
   onDeleteStudent,
 }: StudentManagerProps) {
   const [newStudentName, setNewStudentName] = useState('');
+  const [newStudentIntake, setNewStudentIntake] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [editingIntake, setEditingIntake] = useState('');
   const [deleteConfId, setDeleteConfId] = useState<string | null>(null);
 
   // Filter students by current section & search term
@@ -71,22 +73,25 @@ export default function StudentManager({
     e.preventDefault();
     const cleanName = newStudentName.trim();
     if (!cleanName) return;
-    onAddStudent(cleanName, activeSection.id);
+    onAddStudent(cleanName, activeSection.id, newStudentIntake.trim() || undefined);
     setNewStudentName('');
+    setNewStudentIntake('');
   };
 
   const handleStartEdit = (student: Student) => {
     setEditingStudentId(student.id);
     setEditingName(student.name);
+    setEditingIntake(student.intake || 'Default Intake');
     setDeleteConfId(null); // Cancel any delete prompts
   };
 
   const handleSaveEdit = (id: string) => {
     const cleanName = editingName.trim();
     if (!cleanName) return;
-    onEditStudent(id, cleanName);
+    onEditStudent(id, cleanName, editingIntake.trim() || undefined);
     setEditingStudentId(null);
     setEditingName('');
+    setEditingIntake('');
   };
 
   const handleCancelEdit = () => {
@@ -135,7 +140,7 @@ export default function StudentManager({
         {/* Form & Search Tools (horizontal split) */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
           {/* Add Student Form */}
-          <form onSubmit={handleAddSubmit} className="md:col-span-7 flex gap-2">
+          <form onSubmit={handleAddSubmit} className="md:col-span-7 flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
               <input
                 id="add-student-input"
@@ -145,6 +150,26 @@ export default function StudentManager({
                 onChange={e => setNewStudentName(e.target.value)}
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-400 transition-all text-slate-800"
               />
+            </div>
+            <div className="relative w-full sm:w-44">
+              <input
+                id="add-student-intake"
+                type="text"
+                placeholder="Intake (e.g. May 2026)"
+                value={newStudentIntake}
+                onChange={e => setNewStudentIntake(e.target.value)}
+                list="existing-intakes-list"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-400 transition-all text-slate-804 text-xs font-bold"
+              />
+              <datalist id="existing-intakes-list">
+                {Array.from(new Set(sectionStudents.map(s => s.intake).filter(Boolean))).map(it => (
+                  <option key={it} value={it} />
+                ))}
+                <option value="Jan 2026" />
+                <option value="May 2026" />
+                <option value="Jun 2026" />
+                <option value="Sep 2026" />
+              </datalist>
             </div>
             <button
               id="add-student-btn"
@@ -271,7 +296,7 @@ export default function StudentManager({
                       {/* Name area */}
                       <div className="flex-1 min-w-0">
                         {isEditing ? (
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                             <input
                               type="text"
                               value={editingName}
@@ -281,7 +306,20 @@ export default function StudentManager({
                                 if (e.key === 'Escape') handleCancelEdit();
                               }}
                               autoFocus
-                              className="w-full max-w-md px-3 py-1.5 bg-white border border-indigo-400 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 text-slate-800"
+                              className="w-full max-w-xs px-3 py-1.5 bg-white border border-indigo-400 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 text-slate-800 animate-fade-in"
+                              placeholder="Full Name"
+                            />
+                            <input
+                              type="text"
+                              value={editingIntake}
+                              onChange={e => setEditingIntake(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleSaveEdit(student.id);
+                                if (e.key === 'Escape') handleCancelEdit();
+                              }}
+                              className="w-full sm:w-40 px-3 py-1.5 bg-white border border-indigo-400 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-100 text-slate-800"
+                              placeholder="Intake (Cohort)"
+                              list="existing-intakes-list"
                             />
                           </div>
                         ) : (
@@ -313,7 +351,12 @@ export default function StudentManager({
                                 </div>
                               );
                             })()}
-                            {renderHighlightedName(student.name, searchTerm)}
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3.5">
+                              {renderHighlightedName(student.name, searchTerm)}
+                              <span className="inline-flex px-2 py-0.5 rounded bg-indigo-50 border border-indigo-120 hover:bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase tracking-wider self-start sm:self-auto transition-colors">
+                                {student.intake || 'Default Intake'}
+                              </span>
+                            </div>
                           </div>
                         )}
                       </div>

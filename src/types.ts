@@ -6,6 +6,7 @@ export interface Student {
   id: string;
   name: string;
   sectionId: string;
+  intake?: string; // e.g. "Jan 2026", "June 2026"
 }
 
 export interface Program {

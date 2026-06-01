@@ -722,6 +722,18 @@ export default function App() {
     });
   };
 
+  const handleImportGlobalHolidays = (dates: string[]) => {
+    setHolidays(prev => {
+      const next = { ...prev };
+      sections.forEach(sec => {
+        const existing = next[sec.id] || [];
+        const union = Array.from(new Set([...existing, ...dates]));
+        next[sec.id] = union;
+      });
+      return next;
+    });
+  };
+
   // Global metrics across entire app
   const totalGlobalStudents = students.length;
   const activeSectionStudents = students.filter(s => s.sectionId === activeSectionId);
@@ -1224,6 +1236,8 @@ export default function App() {
                   onSubmitDate={handleSubmitDate}
                   onUnsubmitDate={handleUnsubmitDate}
                   holidays={holidays}
+                  onToggleHoliday={handleToggleHoliday}
+                  onImportGlobalHolidays={handleImportGlobalHolidays}
                 />
               )}
 

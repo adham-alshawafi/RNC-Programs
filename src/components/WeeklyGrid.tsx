@@ -77,6 +77,58 @@ export default function WeeklyGrid({
   const [hoveredCell, setHoveredCell] = useState<{ studentId: string; dateStr: string } | null>(null);
   const [activeMenuDay, setActiveMenuDay] = useState<string | null>(null);
 
+  const [showSaturday, setShowSaturday] = useState<boolean>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return true;
+    try {
+      const email = JSON.parse(savedUser).email.toLowerCase().trim();
+      const saved = localStorage.getItem(`attendance_${email}_show_saturday`);
+      return saved ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const [showSunday, setShowSunday] = useState<boolean>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return true;
+    try {
+      const email = JSON.parse(savedUser).email.toLowerCase().trim();
+      const saved = localStorage.getItem(`attendance_${email}_show_sunday`);
+      return saved ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const handleToggleSaturday = () => {
+    setShowSaturday(prev => {
+      const next = !prev;
+      const savedUser = localStorage.getItem('attendance_current_user');
+      if (savedUser) {
+        try {
+          const email = JSON.parse(savedUser).email.toLowerCase().trim();
+          localStorage.setItem(`attendance_${email}_show_saturday`, JSON.stringify(next));
+        } catch (_) {}
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSunday = () => {
+    setShowSunday(prev => {
+      const next = !prev;
+      const savedUser = localStorage.getItem('attendance_current_user');
+      if (savedUser) {
+        try {
+          const email = JSON.parse(savedUser).email.toLowerCase().trim();
+          localStorage.setItem(`attendance_${email}_show_sunday`, JSON.stringify(next));
+        } catch (_) {}
+      }
+      return next;
+    });
+  };
+
   const sectionHolidays = useMemo(() => {
     return holidays[activeSection.id] || [];
   }, [holidays, activeSection.id]);
@@ -86,15 +138,23 @@ export default function WeeklyGrid({
     return students.filter(s => s.sectionId === activeSection.id);
   }, [students, activeSection.id]);
 
-  // Generate week dates (Monday ... Sunday)
+  // Generate week dates (Monday ... Sunday, filtered according to weekend toggles)
   const weekDates = useMemo(() => {
-    return getWeekDates(weekStart);
-  }, [weekStart]);
+    const fullWeek = getWeekDates(weekStart);
+    return fullWeek.filter(d => {
+      const day = d.getDay();
+      if (day === 6 && !showSaturday) return false;
+      if (day === 0 && !showSunday) return false;
+      return true;
+    });
+  }, [weekStart, showSaturday, showSunday]);
 
   // Format week range label
   const weekRangeLabel = useMemo(() => {
     const start = weekDates[0];
-    const end = weekDates[6];
+    const end = weekDates[weekDates.length - 1];
+    
+    if (!start || !end) return '';
     
     const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -274,7 +334,7 @@ export default function WeeklyGrid({
             </button>
           </div>
 
-          {/* Custom start day Date-Picker */}
+  {/* Custom start day Date-Picker */}
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:inline">Jump:</span>
             <input
@@ -285,6 +345,30 @@ export default function WeeklyGrid({
               className="bg-white/10 border border-white/15 hover:border-white/30 text-white font-mono text-xs font-bold rounded-xl px-3 py-2 outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500 transition shadow-inner"
               title="Toggle or pick a date to center that specific academic week"
             />
+          </div>
+
+          {/* Weekend Toggle Controls */}
+          <div className="flex items-center gap-2.5 bg-white/10 backdrop-blur-xs p-1 px-3 rounded-xl border border-white/10 shadow-inner min-h-[38px]">
+            <span className="text-[9px] font-black text-indigo-200 uppercase tracking-widest">Weekends:</span>
+            <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showSaturday}
+                onChange={handleToggleSaturday}
+                className="rounded border-white/25 text-indigo-600 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 bg-white/15 cursor-pointer"
+              />
+              <span className="text-[11px] font-bold text-white">Sat</span>
+            </label>
+            <span className="text-white/15 text-xs font-light">|</span>
+            <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showSunday}
+                onChange={handleToggleSunday}
+                className="rounded border-white/25 text-indigo-600 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 bg-white/15 cursor-pointer"
+              />
+              <span className="text-[11px] font-bold text-white">Sun</span>
+            </label>
           </div>
         </div>
 

@@ -633,207 +633,6 @@ export default function AttendanceCalculator({
         </div>
       </div>
 
-      {/* Attendance Trend Chart Component */}
-      {((!compareGroups && totalTrackedDays > 0 && chartData.length > 0) || (compareGroups && comparedChartData.length > 0)) && (
-        <div id="attendance-trend-chart-card" className="bg-white rounded-2xl border border-slate-100 shadow-xs p-6 space-y-5 rounded-2xl">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-50">
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5">
-                <span className="p-1.5 bg-indigo-50 rounded-xl text-indigo-600 block">
-                  <Sparkles className="w-3.5 h-3.5" />
-                </span>
-                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest font-display">Trajectory Diagnostics</span>
-              </div>
-              <h3 className="text-sm font-bold text-slate-800 font-display">Daily Attendance Trend Analysis</h3>
-              <p className="text-xs text-slate-400">Class presence rates plotted against registered session log dates</p>
-            </div>
-
-            {/* Controls & Badges */}
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              {/* Compare Groups Switch Button */}
-              <button
-                type="button"
-                onClick={() => setCompareGroups(!compareGroups)}
-                className={`px-3 py-1.5 rounded-xl border text-xs font-bold leading-tight flex items-center gap-2 select-none cursor-pointer transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${
-                  compareGroups
-                    ? 'bg-indigo-600 border-indigo-650 text-white shadow-md shadow-indigo-150'
-                    : 'bg-white border-slate-200 text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-                }`}
-                title="Overlay trend lines from multiple academic sections to benchmark performance"
-              >
-                <TrendingUp className="w-3.5 h-3.5 shrink-0" />
-                <span>Compare Groups</span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black ${
-                  compareGroups ? 'bg-indigo-750 text-indigo-105' : 'bg-slate-100 text-slate-500'
-                }`}>
-                  {compareGroups ? 'ON' : 'OFF'}
-                </span>
-              </button>
-
-              {/* Trajectory Insights badges (only when single group) */}
-              {!compareGroups && (
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <div className="bg-slate-50/60 border border-slate-100/50 rounded-xl px-3.5 py-2 flex flex-col min-w-[110px]">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Trend Behavior</span>
-                    <span className="text-xs font-black text-slate-700 flex items-center gap-1 mt-0.5">
-                      {trendIndicator === 'improving' ? (
-                        <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                      ) : trendIndicator === 'declining' ? (
-                        <ArrowDownRight className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                      ) : (
-                        <Activity className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      )}
-                      {trendText}
-                    </span>
-                  </div>
-
-                  {highestDayObj && (
-                    <div className="bg-slate-50/60 border border-slate-100/50 rounded-xl px-3.5 py-2 flex flex-col min-w-[110px]">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Peak Attendance</span>
-                      <span className="text-xs font-black text-emerald-600 font-mono mt-0.5">
-                        {highestDayObj.formattedDate} ({highestDayObj.percentage}%)
-                      </span>
-                    </div>
-                  )}
-
-                  {lowestDayObj && (
-                    <div className="bg-slate-50/60 border border-slate-100/50 rounded-xl px-3.5 py-2 flex flex-col min-w-[110px]">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Lowest Attendance</span>
-                      <span className="text-xs font-black text-rose-500 font-mono mt-0.5">
-                        {lowestDayObj.formattedDate} ({lowestDayObj.percentage}%)
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Interactive Legend checkbox pills if compareGroups is ON */}
-          {compareGroups && (
-            <div id="compare-groups-legend-pills" className="p-4 bg-slate-50/50 border border-slate-100 rounded-2xl space-y-2">
-              <div className="flex items-center justify-between border-b border-slate-100/60 pb-1.5">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Benchmarked Groups (Toggle curves)</span>
-                <span className="text-[9px] text-indigo-600 font-black flex items-center gap-1 bg-indigo-50 px-2 py-0.5 rounded">
-                  <Activity className="w-3 h-3" /> multi-line overlay
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {sections.map(sec => {
-                  const isChecked = activeCompareSectionIds.includes(sec.id);
-                  const isCurrent = sec.id === activeSection.id;
-                  const color = getSectionColor(sec.id);
-                  const studentCount = students.filter(s => s.sectionId === sec.id).length;
-                  
-                  return (
-                    <button
-                      key={sec.id}
-                      type="button"
-                      onClick={() => toggleCompareSection(sec.id)}
-                      className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs font-bold select-none cursor-pointer hover:scale-[1.01] active:scale-[0.99] transition-all duration-150 ${
-                        isChecked
-                          ? `${color.bg} ${color.border} ${color.text} shadow-2xs`
-                          : 'bg-white border-slate-100/80 text-slate-400 hover:text-slate-600'
-                      }`}
-                    >
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${isChecked ? color.dot : 'bg-slate-300'}`} style={{ backgroundColor: isChecked ? color.hex : undefined }} />
-                      <span>
-                        {sec.name} {isCurrent && <span className="text-[10px] text-indigo-500 font-black bg-indigo-100/50 px-1 py-0.5 rounded ml-0.5">(Current)</span>}
-                      </span>
-                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${isChecked ? 'bg-white/80' : 'bg-slate-50 text-slate-400'}`}>
-                        {studentCount} stds
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Recharts Container */}
-          <div className="w-full h-64 sm:h-72 mt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              {compareGroups ? (
-                <LineChart
-                  data={comparedChartData}
-                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f8fafc" />
-                  <XAxis 
-                    dataKey="formattedDate" 
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
-                    dy={10}
-                  />
-                  <YAxis 
-                    domain={[0, 100]} 
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
-                    tickFormatter={(val) => `${val}%`}
-                  />
-                  <Tooltip content={compareTooltipRenderer} />
-                  {comparedSections.map(sec => {
-                    const color = getSectionColor(sec.id);
-                    const isCurrent = sec.id === activeSection.id;
-                    return (
-                      <Line
-                        key={sec.id}
-                        type="monotone"
-                        dataKey={sec.id}
-                        name={sec.name}
-                        stroke={color.hex}
-                        strokeWidth={isCurrent ? 3.5 : 2}
-                        dot={{ r: isCurrent ? 4.5 : 2.5, strokeWidth: 1, stroke: '#ffffff' }}
-                        activeDot={{ r: 6.5 }}
-                        connectNulls
-                      />
-                    );
-                  })}
-                </LineChart>
-              ) : (
-                <AreaChart
-                  data={chartData}
-                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient id="colorAttendance" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f8fafc" />
-                  <XAxis 
-                    dataKey="formattedDate" 
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
-                    dy={10}
-                  />
-                  <YAxis 
-                    domain={[0, 100]} 
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
-                    tickFormatter={(val) => `${val}%`}
-                  />
-                  <Tooltip content={customTooltipRenderer} />
-                  <Area 
-                    type="monotone" 
-                    dataKey="percentage" 
-                    stroke="#4f46e5" 
-                    strokeWidth={2.5}
-                    fillOpacity={1} 
-                    fill="url(#colorAttendance)" 
-                  />
-                </AreaChart>
-              )}
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
       {/* Roster Calculator Table */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -1040,6 +839,207 @@ export default function AttendanceCalculator({
           </div>
         )}
       </div>
+
+      {/* Attendance Trend Chart Component */}
+      {((!compareGroups && totalTrackedDays > 0 && chartData.length > 0) || (compareGroups && comparedChartData.length > 0)) && (
+        <div id="attendance-trend-chart-card" className="bg-white rounded-2xl border border-slate-100 shadow-xs p-6 space-y-5 rounded-2xl">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-50">
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5">
+                <span className="p-1.5 bg-indigo-50 rounded-xl text-indigo-600 block">
+                  <Sparkles className="w-3.5 h-3.5" />
+                </span>
+                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest font-display">Trajectory Diagnostics</span>
+              </div>
+              <h3 className="text-sm font-bold text-slate-800 font-display">Daily Attendance Trend Analysis</h3>
+              <p className="text-xs text-slate-400">Class presence rates plotted against registered session log dates</p>
+            </div>
+
+            {/* Controls & Badges */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              {/* Compare Groups Switch Button */}
+              <button
+                type="button"
+                onClick={() => setCompareGroups(!compareGroups)}
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold leading-tight flex items-center gap-2 select-none cursor-pointer transition-all duration-150 hover:scale-[1.01] active:scale-[0.99] ${
+                  compareGroups
+                    ? 'bg-indigo-600 border-indigo-650 text-white shadow-md shadow-indigo-150'
+                    : 'bg-white border-slate-200 text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+                }`}
+                title="Overlay trend lines from multiple academic sections to benchmark performance"
+              >
+                <TrendingUp className="w-3.5 h-3.5 shrink-0" />
+                <span>Compare Groups</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black ${
+                  compareGroups ? 'bg-indigo-750 text-indigo-105' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {compareGroups ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              {/* Trajectory Insights badges (only when single group) */}
+              {!compareGroups && (
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="bg-slate-50/60 border border-slate-100/50 rounded-xl px-3.5 py-2 flex flex-col min-w-[110px]">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Trend Behavior</span>
+                    <span className="text-xs font-black text-slate-700 flex items-center gap-1 mt-0.5">
+                      {trendIndicator === 'improving' ? (
+                        <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      ) : trendIndicator === 'declining' ? (
+                        <ArrowDownRight className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      ) : (
+                        <Activity className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      )}
+                      {trendText}
+                    </span>
+                  </div>
+
+                  {highestDayObj && (
+                    <div className="bg-slate-50/60 border border-slate-100/50 rounded-xl px-3.5 py-2 flex flex-col min-w-[110px]">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Peak Attendance</span>
+                      <span className="text-xs font-black text-emerald-600 font-mono mt-0.5">
+                        {highestDayObj.formattedDate} ({highestDayObj.percentage}%)
+                      </span>
+                    </div>
+                  )}
+
+                  {lowestDayObj && (
+                    <div className="bg-slate-50/60 border border-slate-100/50 rounded-xl px-3.5 py-2 flex flex-col min-w-[110px]">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Lowest Attendance</span>
+                      <span className="text-xs font-black text-rose-500 font-mono mt-0.5">
+                        {lowestDayObj.formattedDate} ({lowestDayObj.percentage}%)
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Interactive Legend checkbox pills if compareGroups is ON */}
+          {compareGroups && (
+            <div id="compare-groups-legend-pills" className="p-4 bg-slate-50/50 border border-slate-100 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between border-b border-slate-100/60 pb-1.5">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block font-display">Benchmarked Groups (Toggle curves)</span>
+                <span className="text-[9px] text-indigo-600 font-black flex items-center gap-1 bg-indigo-50 px-2 py-0.5 rounded">
+                  <Activity className="w-3 h-3" /> multi-line overlay
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {sections.map(sec => {
+                  const isChecked = activeCompareSectionIds.includes(sec.id);
+                  const isCurrent = sec.id === activeSection.id;
+                  const color = getSectionColor(sec.id);
+                  const studentCount = students.filter(s => s.sectionId === sec.id).length;
+                  
+                  return (
+                    <button
+                      key={sec.id}
+                      type="button"
+                      onClick={() => toggleCompareSection(sec.id)}
+                      className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs font-bold select-none cursor-pointer hover:scale-[1.01] active:scale-[0.99] transition-all duration-150 ${
+                        isChecked
+                          ? `${color.bg} ${color.border} ${color.text} shadow-2xs`
+                          : 'bg-white border-slate-100/80 text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${isChecked ? color.dot : 'bg-slate-300'}`} style={{ backgroundColor: isChecked ? color.hex : undefined }} />
+                      <span>
+                        {sec.name} {isCurrent && <span className="text-[10px] text-indigo-500 font-black bg-indigo-100/50 px-1 py-0.5 rounded ml-0.5">(Current)</span>}
+                      </span>
+                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${isChecked ? 'bg-white/80' : 'bg-slate-50 text-slate-400'}`}>
+                        {studentCount} stds
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Recharts Container */}
+          <div className="w-full h-64 sm:h-72 mt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              {compareGroups ? (
+                <LineChart
+                  data={comparedChartData}
+                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f8fafc" />
+                  <XAxis 
+                    dataKey="formattedDate" 
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+                    dy={10}
+                  />
+                  <YAxis 
+                    domain={[0, 100]} 
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+                    tickFormatter={(val) => `${val}%`}
+                  />
+                  <Tooltip content={compareTooltipRenderer} />
+                  {comparedSections.map(sec => {
+                    const color = getSectionColor(sec.id);
+                    const isCurrent = sec.id === activeSection.id;
+                    return (
+                      <Line
+                        key={sec.id}
+                        type="monotone"
+                        dataKey={sec.id}
+                        name={sec.name}
+                        stroke={color.hex}
+                        strokeWidth={isCurrent ? 3.5 : 2}
+                        dot={{ r: isCurrent ? 4.5 : 2.5, strokeWidth: 1, stroke: '#ffffff' }}
+                        activeDot={{ r: 6.5 }}
+                        connectNulls
+                      />
+                    );
+                  })}
+                </LineChart>
+              ) : (
+                <AreaChart
+                  data={chartData}
+                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="colorAttendance" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f8fafc" />
+                  <XAxis 
+                    dataKey="formattedDate" 
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+                    dy={10}
+                  />
+                  <YAxis 
+                    domain={[0, 100]} 
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+                    tickFormatter={(val) => `${val}%`}
+                  />
+                  <Tooltip content={customTooltipRenderer} />
+                  <Area 
+                    type="monotone" 
+                    dataKey="percentage" 
+                    stroke="#4f46e5" 
+                    strokeWidth={2.5}
+                    fillOpacity={1} 
+                    fill="url(#colorAttendance)" 
+                  />
+                </AreaChart>
+              )}
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Session Record Submission & Recalculation Engine */}
       <div id="recalculation-engine-card" className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5">

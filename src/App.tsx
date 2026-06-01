@@ -20,7 +20,9 @@ import {
   ChevronsUpDown,
   Grid,
   LogOut,
-  UserX
+  UserX,
+  FileSpreadsheet,
+  Layers
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -30,6 +32,8 @@ import CalendarAttendance from './components/CalendarAttendance';
 import AttendanceCalculator from './components/AttendanceCalculator';
 import WeeklyGrid from './components/WeeklyGrid';
 import Auth, { UserAccount } from './components/Auth';
+import MonthlyBoard from './components/MonthlyBoard';
+import IntakeBoard from './components/IntakeBoard';
 
 // Types & Initial Data
 import { Student, Section, AttendanceMap, AttendanceStatus, AttendanceNotesMap, Program } from './types';
@@ -142,6 +146,7 @@ export default function App() {
     localStorage.removeItem(`attendance_${email}_holidays`);
     localStorage.removeItem(`attendance_${email}_notes`);
     localStorage.removeItem(`attendance_${email}_active_section_id`);
+    localStorage.removeItem(`attendance_${email}_custom_intakes`);
 
     // 3. Clear reset tokens specifically for this user
     const savedTokens = JSON.parse(localStorage.getItem('attendance_reset_tokens') || '{}');
@@ -185,6 +190,14 @@ export default function App() {
     const email = JSON.parse(savedUser).email.toLowerCase().trim();
     const saved = localStorage.getItem(`attendance_${email}_students`);
     return saved ? JSON.parse(saved) : [];
+  });
+
+  const [customIntakes, setCustomIntakes] = useState<string[]>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return ['Default Intake', 'May 2026', 'June 2026'];
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_custom_intakes`);
+    return saved ? JSON.parse(saved) : ['Default Intake', 'May 2026', 'June 2026'];
   });
 
   const [attendance, setAttendance] = useState<AttendanceMap>(() => {
@@ -236,7 +249,7 @@ export default function App() {
     return saved || '';
   });
 
-  const [activeTab, setActiveTab] = useState<'attendance' | 'weekly_grid' | 'students' | 'calculator'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'weekly_grid' | 'monthly_board' | 'intake_board' | 'students' | 'calculator'>('attendance');
   const [selectedDate, setSelectedDate] = useState<string>('2026-05-31'); // Current local time is 2026-05-31
 
   // Program & Section CRUD states
@@ -289,6 +302,13 @@ export default function App() {
       localStorage.setItem(`attendance_${email}_students`, JSON.stringify(students));
     }
   }, [students, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_custom_intakes`, JSON.stringify(customIntakes));
+    }
+  }, [customIntakes, currentUser]);
 
   useEffect(() => {
     if (currentUser) {
@@ -529,6 +549,48 @@ export default function App() {
 
   const handleDeleteStudent = (id: string) => {
     setStudents(prev => prev.filter(s => s.id !== id));
+  };
+
+  const handleAddIntake = (name: string) => {
+    const cleanName = name.trim();
+    if (!cleanName) return;
+    setCustomIntakes(prev => {
+      if (prev.some(it => it.toLowerCase() === cleanName.toLowerCase())) return prev;
+      return [...prev, cleanName];
+    });
+  };
+
+  const handleRenameIntake = (oldName: string, newName: string) => {
+    const cleanOld = oldName.trim();
+    const cleanNew = newName.trim();
+    if (!cleanOld || !cleanNew || cleanOld === cleanNew) return;
+
+    if (cleanOld === 'Default Intake') return;
+
+    setCustomIntakes(prev => prev.map(it => it === cleanOld ? cleanNew : it));
+    setStudents(prev => prev.map(student => {
+      const studentIntake = student.intake || 'Default Intake';
+      if (studentIntake === cleanOld) {
+        return { ...student, intake: cleanNew };
+      }
+      return student;
+    }));
+  };
+
+  const handleDeleteIntake = (name: string) => {
+    const cleanName = name.trim();
+    if (!cleanName) return;
+
+    if (cleanName === 'Default Intake') return;
+
+    setCustomIntakes(prev => prev.filter(it => it !== cleanName));
+    setStudents(prev => prev.map(student => {
+      const studentIntake = student.intake || 'Default Intake';
+      if (studentIntake === cleanName) {
+        return { ...student, intake: 'Default Intake' };
+      }
+      return student;
+    }));
   };
 
   // 4. Attendance Actions
@@ -1086,6 +1148,30 @@ export default function App() {
                   <span>Weekly Board</span>
                 </button>
                 <button
+                  id="tab-monthly-board-btn"
+                  onClick={() => setActiveTab('monthly_board')}
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 cursor-pointer transition-all ${
+                    activeTab === 'monthly_board'
+                      ? 'bg-white text-slate-800 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>Monthly Board</span>
+                </button>
+                <button
+                  id="tab-intake-board-btn"
+                  onClick={() => setActiveTab('intake_board')}
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 cursor-pointer transition-all ${
+                    activeTab === 'intake_board'
+                      ? 'bg-white text-slate-800 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Layers className="w-4 h-4" />
+                  <span>Intake Board</span>
+                </button>
+                <button
                   id="tab-students-btn"
                   onClick={() => setActiveTab('students')}
                   className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 cursor-pointer transition-all ${
@@ -1140,7 +1226,7 @@ export default function App() {
                 />
               )}
 
-              {activeTab === 'weekly_grid' && (
+               {activeTab === 'weekly_grid' && (
                 <WeeklyGrid
                   activeSection={activeSection}
                   students={students}
@@ -1154,6 +1240,31 @@ export default function App() {
                 />
               )}
 
+              {activeTab === 'monthly_board' && (
+                <MonthlyBoard
+                  activeSection={activeSection}
+                  students={students}
+                  attendance={attendance}
+                  submittedDates={submittedDates}
+                  sections={sections}
+                  holidays={holidays}
+                />
+              )}
+
+              {activeTab === 'intake_board' && (
+                <IntakeBoard
+                  students={students}
+                  attendance={attendance}
+                  submittedDates={submittedDates}
+                  sections={sections}
+                  holidays={holidays}
+                  customIntakes={customIntakes}
+                  onAddIntake={handleAddIntake}
+                  onRenameIntake={handleRenameIntake}
+                  onDeleteIntake={handleDeleteIntake}
+                />
+              )}
+
               {activeTab === 'students' && (
                 <StudentManager
                   activeSection={activeSection}
@@ -1164,6 +1275,10 @@ export default function App() {
                   onEditStudent={handleEditStudent}
                   onDeleteStudent={handleDeleteStudent}
                   onAddStudentsBatch={handleAddStudentsBatch}
+                  customIntakes={customIntakes}
+                  onAddIntake={handleAddIntake}
+                  onRenameIntake={handleRenameIntake}
+                  onDeleteIntake={handleDeleteIntake}
                 />
               )}
 

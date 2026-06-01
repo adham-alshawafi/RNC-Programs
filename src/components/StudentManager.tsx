@@ -1,6 +1,6 @@
-import React, { useState, FormEvent, useEffect } from 'react';
+import React, { useState, FormEvent, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, UserPlus, Trash2, Edit2, Check, X, Users, AlertCircle, RefreshCw, Upload, FileSpreadsheet, Info, Download } from 'lucide-react';
+import { Search, UserPlus, Trash2, Edit2, Check, X, Users, AlertCircle, RefreshCw, Upload, FileSpreadsheet, Info, Download, Layers } from 'lucide-react';
 import { Student, Section, AttendanceMap } from '../types';
 
 interface StudentManagerProps {
@@ -12,6 +12,10 @@ interface StudentManagerProps {
   onEditStudent: (id: string, newName: string, newIntake?: string) => void;
   onDeleteStudent: (id: string) => void;
   onAddStudentsBatch?: (newStudents: { name: string; intake?: string }[]) => void;
+  customIntakes: string[];
+  onAddIntake: (name: string) => void;
+  onRenameIntake: (oldName: string, newName: string) => void;
+  onDeleteIntake: (name: string) => void;
 }
 
 export default function StudentManager({
@@ -23,6 +27,10 @@ export default function StudentManager({
   onEditStudent,
   onDeleteStudent,
   onAddStudentsBatch,
+  customIntakes,
+  onAddIntake,
+  onRenameIntake,
+  onDeleteIntake,
 }: StudentManagerProps) {
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentIntake, setNewStudentIntake] = useState('');
@@ -31,6 +39,16 @@ export default function StudentManager({
   const [editingName, setEditingName] = useState('');
   const [editingIntake, setEditingIntake] = useState('');
   const [deleteConfId, setDeleteConfId] = useState<string | null>(null);
+
+  // Intake Manager States
+  const [isIntakeManagerOpen, setIsIntakeManagerOpen] = useState(false);
+  const [newCustomIntakeName, setNewCustomIntakeName] = useState('');
+  const [editingIntakeOldName, setEditingIntakeOldName] = useState<string | null>(null);
+  const [editingIntakeNewName, setEditingIntakeNewName] = useState('');
+
+  const allActiveIntakes = useMemo(() => {
+    return Array.from(new Set([...customIntakes, ...students.map(s => s.intake).filter(Boolean)]));
+  }, [customIntakes, students]);
 
   // CSV Import States
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -306,6 +324,7 @@ export default function StudentManager({
               setImportError(null);
               setCsvParsedData([]);
               setImportSuccessCount(null);
+              setIsIntakeManagerOpen(false);
             }}
             className={`px-3 py-1.5 rounded-full text-xs font-bold border flex items-center gap-1.5 transition-all duration-150 cursor-pointer select-none active:scale-95 ${
               isImportOpen
@@ -316,6 +335,22 @@ export default function StudentManager({
             <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>Import CSV</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsIntakeManagerOpen(prev => !prev);
+              setIsImportOpen(false);
+            }}
+            className={`px-3 py-1.5 rounded-full text-xs font-bold border flex items-center gap-1.5 transition-all duration-150 cursor-pointer select-none active:scale-95 ${
+              isIntakeManagerOpen
+                ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Manage Intakes</span>
+          </button>
           
           <div className="px-3 py-1.5 bg-indigo-50/80 rounded-full text-indigo-700 text-xs font-semibold flex items-center gap-1.5 select-none">
             <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
@@ -325,6 +360,160 @@ export default function StudentManager({
       </div>
 
       <div className="p-6 space-y-6">
+        {/* Intake Management Drawer */}
+        <AnimatePresence>
+          {isIntakeManagerOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden border border-slate-150 rounded-2xl bg-linear-to-b from-indigo-50/20 via-indigo-50/5 to-transparent select-none mb-6"
+            >
+              <div className="p-5 space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                      <Layers className="w-4 h-4 text-indigo-500" />
+                      <span>Manage Student Intake Batches</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 max-w-2xl leading-relaxed font-semibold">
+                      Control the core entry cohorts. Creating intakes registers them globally. Renaming or deleting updates all current student profiles carrying those batch codes.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsIntakeManagerOpen(false)}
+                    className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Create Intake Panel */}
+                <div className="p-3 bg-white border border-slate-150 rounded-xl flex flex-col sm:flex-row items-center gap-2">
+                  <div className="text-xs font-bold text-slate-600 shrink-0">Define New Intake:</div>
+                  <input
+                    type="text"
+                    placeholder="e.g. May 2026"
+                    value={newCustomIntakeName}
+                    onChange={e => setNewCustomIntakeName(e.target.value)}
+                    className="flex-1 w-full px-3 py-1.5 bg-slate-50 border border-slate-205 rounded-lg text-xs font-semibold focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-150 text-slate-850"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (newCustomIntakeName.trim()) {
+                          onAddIntake(newCustomIntakeName.trim());
+                          setNewCustomIntakeName('');
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newCustomIntakeName.trim()) {
+                        onAddIntake(newCustomIntakeName.trim());
+                        setNewCustomIntakeName('');
+                      }
+                    }}
+                    disabled={!newCustomIntakeName.trim()}
+                    className="w-full sm:w-auto px-4 py-1.5 bg-indigo-600 hover:bg-indigo-755 disabled:opacity-50 text-white rounded-lg text-xs font-bold shrink-0 cursor-pointer transition select-none"
+                  >
+                    + Register
+                  </button>
+                </div>
+
+                {/* List and Modify Intakes */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {allActiveIntakes.map(intake => {
+                    const studentCount = students.filter(s => (s.intake || 'Default Intake') === intake).length;
+                    const isDefault = intake === 'Default Intake';
+                    const isEditingThis = editingIntakeOldName === intake;
+
+                    return (
+                      <div key={intake} className="p-3 bg-white border border-slate-150 rounded-xl flex items-center justify-between gap-3 shadow-3xs">
+                        {isEditingThis ? (
+                          <div className="flex-1 flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={editingIntakeNewName}
+                              onChange={e => setEditingIntakeNewName(e.target.value)}
+                              className="flex-1 px-2 py-1 bg-slate-50 border border-indigo-400 rounded-lg text-xs font-semibold text-slate-800"
+                              placeholder="New name"
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  onRenameIntake(intake, editingIntakeNewName);
+                                  setEditingIntakeOldName(null);
+                                }
+                                if (e.key === 'Escape') setEditingIntakeOldName(null);
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onRenameIntake(intake, editingIntakeNewName);
+                                setEditingIntakeOldName(null);
+                              }}
+                              className="p-1 text-emerald-600 hover:bg-slate-50 rounded cursor-pointer"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingIntakeOldName(null)}
+                              className="p-1 text-slate-450 hover:bg-slate-50 rounded cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="min-w-0 flex flex-col">
+                              <span className="text-xs font-black text-slate-700 truncate" title={intake}>
+                                {intake}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-400 uppercase">
+                                {studentCount} student{studentCount === 1 ? '' : 's'}
+                              </span>
+                            </div>
+
+                            {!isDefault && (
+                              <div className="shrink-0 flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingIntakeOldName(intake);
+                                    setEditingIntakeNewName(intake);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50/50 rounded transition cursor-pointer"
+                                  title="Rename Intake"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onDeleteIntake(intake);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50/50 rounded transition cursor-pointer"
+                                  title="Delete Intake"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* CSV Import Drawers */}
         <AnimatePresence>
           {isImportOpen && (
@@ -543,13 +732,9 @@ export default function StudentManager({
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-400 transition-all text-slate-804 text-xs font-bold"
               />
               <datalist id="existing-intakes-list">
-                {Array.from(new Set(sectionStudents.map(s => s.intake).filter(Boolean))).map(it => (
+                {allActiveIntakes.map(it => (
                   <option key={it} value={it} />
                 ))}
-                <option value="Jan 2026" />
-                <option value="May 2026" />
-                <option value="Jun 2026" />
-                <option value="Sep 2026" />
               </datalist>
             </div>
             <button

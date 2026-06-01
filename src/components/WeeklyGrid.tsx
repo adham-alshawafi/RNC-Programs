@@ -613,18 +613,18 @@ export default function WeeklyGrid({
 
                         if (isDayHoliday) {
                           colorClass = 'bg-slate-100/80 border-slate-200 text-slate-400 cursor-not-allowed';
-                          dotContent = <Coffee className="w-3.5 h-3.5 text-amber-500/80 shrink-0" />;
+                          dotContent = <Coffee className="w-5 h-5 text-amber-500/80 shrink-0" />;
                           cellTitle = 'Holiday - Excluded from Calculations';
                         } else if (status === 'present') {
                           colorClass = 'bg-emerald-500 border-emerald-400 text-white shadow-xs';
-                          dotContent = <Check className="w-2.5 h-2.5 text-white stroke-[4px]" />;
+                          dotContent = <Check className="w-[18px] h-[18px] text-white stroke-[4.5px]" />;
                           cellTitle = 'Recorded: Present\nClick to change to Absent';
                         } else if (status === 'absent') {
                           colorClass = 'bg-rose-500 border-rose-400 text-white shadow-xs';
-                          dotContent = <X className="w-2.5 h-2.5 text-white stroke-[4px]" />;
+                          dotContent = <X className="w-[18px] h-[18px] text-white stroke-[4.5px]" />;
                           cellTitle = 'Recorded: Absent\nClick to clear / remove record';
                         }
-
+ 
                         return (
                           <td
                             key={idx}
@@ -636,7 +636,7 @@ export default function WeeklyGrid({
                               <button
                                 type="button"
                                 onClick={isDayHoliday ? undefined : () => handleCellClick(student.id, dateStr)}
-                                className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-200 select-none relative ${
+                                className={`w-11.5 h-11.5 w-[46px] h-[46px] rounded-full border-2.5 flex items-center justify-center transition-all duration-200 select-none relative ${
                                   isDayHoliday 
                                     ? colorClass 
                                     : `cursor-pointer hover:scale-108 active:scale-90 ${colorClass}`
@@ -646,7 +646,7 @@ export default function WeeklyGrid({
                               >
                                 {dotContent}
                                 {isHovered && !status && !isDayHoliday && (
-                                  <span className="text-[10px] font-black text-indigo-500 opacity-60 font-mono animate-pulse">
+                                  <span className="text-sm font-black text-indigo-500 opacity-60 font-mono animate-pulse">
                                     +
                                   </span>
                                 )}
@@ -655,7 +655,7 @@ export default function WeeklyGrid({
                           </td>
                         );
                       })}
-
+ 
                       {/* Average score column display */}
                       <td className="px-5 py-3.5 text-center font-mono align-middle">
                         <div className="space-y-1">
@@ -665,7 +665,7 @@ export default function WeeklyGrid({
                               : accuracyValue === 100 
                               ? 'text-amber-600'
                               : 'text-slate-800'
-                          }`}>
+                           }`}>
                             {accuracyValue !== null ? `${accuracyValue}%` : '—'}
                           </p>
                           {accuracyValue !== null && (
@@ -683,35 +683,34 @@ export default function WeeklyGrid({
           </div>
         )}
       </div>
-
+ 
       {/* Week overview audit log information card */}
-      <div id="weekly-board-info-pills" className="bg-slate-50 rounded-2xl border border-slate-150 p-6 space-y-4">
-        <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
-          <CheckSquare className="w-4 h-4 text-slate-400" />
+      <div id="weekly-board-info-pills" className="bg-slate-50/50 rounded-xl border border-slate-150 p-4 space-y-2">
+        <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+          <CheckSquare className="w-3.5 h-3.5 text-slate-400" />
           <span>Helpful Tips for Weekly Management</span>
         </h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-500">
-          <div className="bg-white p-4 rounded-xl border border-slate-100 space-y-1.5">
-            <span className="font-extrabold text-indigo-600 block">Cycle Attendance</span>
-            <p className="text-xxs font-medium leading-relaxed">
-              Simply click any cell circle. First click turns it <span className="text-emerald-600 font-bold">Present (🟢)</span>. A second click flips it to <span className="text-rose-500 font-bold">Absent (🔴)</span>. Clicking it again restores it to unmarked slate.
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px] text-slate-500">
+          <div className="bg-white/60 p-2.5 rounded-lg border border-slate-100 space-y-1">
+            <span className="font-bold text-indigo-650 text-[10px] block">Cycle Attendance</span>
+            <p className="text-[10px] text-slate-400 leading-normal">
+              Click any cell circle. Cycles through <span className="text-emerald-600 font-semibold">Present (🟢)</span> → <span className="text-rose-500 font-semibold">Absent (🔴)</span> → Empty.
             </p>
           </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-100 space-y-1.5">
-            <span className="font-extrabold text-indigo-600 block">Set Entire Day (Bulk)</span>
-            <p className="text-xxs font-medium leading-relaxed">
-              Use the <span className="font-bold text-slate-700">"Set All" dropdown button</span> inside any day coordinate header. Instantly lock whole day to Present, Absent or Clear existing markers. Very useful for rapid roll-calls!
+          <div className="bg-white/60 p-2.5 rounded-lg border border-slate-100 space-y-1">
+            <span className="font-bold text-indigo-650 text-[10px] block">Set Entire Day</span>
+            <p className="text-[10px] text-slate-400 leading-normal">
+              Use the <span className="font-semibold text-slate-700">"Set All" menu</span> on headers to instantly mark or clear an entire day.
             </p>
           </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-100 space-y-1.5">
-            <span className="font-extrabold text-indigo-600 block">Cycle Any Week In History</span>
-            <p className="text-xxs font-medium leading-relaxed">
-              Use the keyboard-accessible date picker inside the indigo panel or the previous/next week actions to navigate back or forward. Real-time percentages adjust immediately.
+          <div className="bg-white/60 p-2.5 rounded-lg border border-slate-100 space-y-1">
+            <span className="font-bold text-indigo-650 text-[10px] block">Jump & Browse Weeks</span>
+            <p className="text-[10px] text-slate-400 leading-normal">
+              Use the date picker or navigation arrows in the header card to load and edit archives seamlessly.
             </p>
           </div>
         </div>
       </div>
-      
     </div>
   );
 }

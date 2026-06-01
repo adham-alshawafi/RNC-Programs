@@ -76,6 +76,8 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
   const [forgotSuccess, setForgotSuccess] = useState(false);
   const [forgotError, setForgotError] = useState('');
   const [generatedToken, setGeneratedToken] = useState('');
+  const [isSendingMail, setIsSendingMail] = useState(false);
+  const [smtpNotice, setSmtpNotice] = useState('');
 
   // Reset Password States
   const [resetTokenInput, setResetTokenInput] = useState('');
@@ -237,10 +239,11 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
   };
 
   // Handle Forgot Password link generator
-  const handleForgotSubmit = (e: React.FormEvent) => {
+  const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setForgotError('');
     setForgotSuccess(false);
+    setSmtpNotice('');
 
     if (!forgotEmail.trim()) {
       setForgotError('Please specify your registered email.');
@@ -251,13 +254,12 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
     const existingUser = users.find(u => u.email.toLowerCase().trim() === emailLower);
 
     if (!existingUser) {
-      // For privacy we could show success, but standard interactive sandbox lists help with testing
       setForgotError('Enter a currently registered tester email address.');
       return;
     }
 
     // Generate random secure unique token
-    const token = 'rst-' + Math.random().toString(36).substr(2, 9) + '-' + Math.random().toString(36).substr(2, 9);
+    const token = 'rst-' + Math.random().toString(36).slice(2, 11) + '-' + Math.random().toString(36).slice(2, 11);
     
     // Store token state in localStorage
     const savedTokens = JSON.parse(localStorage.getItem('attendance_reset_tokens') || '{}');
@@ -267,8 +269,41 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
     };
     localStorage.setItem('attendance_reset_tokens', JSON.stringify(savedTokens));
 
+    setIsSendingMail(true);
     setGeneratedToken(token);
-    setForgotSuccess(true);
+
+    try {
+      const response = await fetch('/api/send-reset-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: emailLower,
+          token: token,
+          fullName: existingUser.fullName || 'Academic Officer'
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setForgotSuccess(true);
+        setSmtpNotice(`Successfully delivered! We sent a secure verification code to: ${emailLower}. Please check your inbox.`);
+      } else if (data.simulated) {
+        // Safe sandbox fallback for easy local preview/testing before SMTP credentials addition
+        setForgotSuccess(true);
+        setSmtpNotice(`Code generated successfully. To receive actual physical emails, configure SMTP_HOST, SMTP_USER, SMTP_PASSWORD in Settings Secrets.`);
+      } else {
+        setForgotSuccess(true);
+        setForgotError(`Server email service response error: ${data.error || 'SMTP failed'}. Token shown below for testing convenience.`);
+      }
+    } catch (err: any) {
+      console.error("Failed to call secure email reset API:", err);
+      setForgotSuccess(true);
+      setSmtpNotice(`Offline Backup Mode: Generated verification token successfully.`);
+    } finally {
+      setIsSendingMail(false);
+    }
   };
 
   // Handle Password Reset Submission
@@ -691,8 +726,8 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
                 className="space-y-4"
               >
                 <div>
-                  <h3 className="text-lg font-bold text-slate-800">Restore Password Link</h3>
-                  <p className="text-[11px] text-slate-400 font-medium">Receive an instant simulated recovery key link</p>
+                  <h3 className="text-lg font-bold text-slate-800">Reset Password</h3>
+                  <p className="text-[11px] text-slate-400 font-medium font-display">Send a secure verification email to your registered inbox</p>
                 </div>
 
                 {forgotError && (
@@ -703,18 +738,25 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
                 )}
 
                 {forgotSuccess ? (
-                  <div className="p-4 bg-emerald-50 border border-emerald-150 rounded-2xl text-emerald-800 space-y-3 mt-2 text-xs">
+                  <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl text-emerald-800 space-y-3 mt-2 text-xs">
                     <div className="flex items-center gap-2">
                       <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-                      <span className="font-bold">Security Token Dispatched!</span>
+                      <span className="font-bold">Verification Request Dispatched!</span>
                     </div>
-                    <p className="text-[11px] leading-relaxed text-slate-600 font-medium">
-                      For testing purposes, your private local recovery details are generated below:
+
+                    {smtpNotice && (
+                      <p className="text-[11px] leading-relaxed text-emerald-950 font-bold bg-white/70 p-2.5 rounded-xl border border-emerald-100 shadow-3xs">
+                        {smtpNotice}
+                      </p>
+                    )}
+
+                    <p className="text-[11px] leading-relaxed text-slate-500 font-medium">
+                      If SMTP has not been configured in Secrets yet, your local simulation security token is provided below for immediate testing:
                     </p>
                     
-                    <div className="p-3 bg-white border border-emerald-100 rounded-xl space-y-2">
-                      <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">Recovery Token:</span>
-                      <code className="block bg-slate-50 border rounded-lg px-2.5 py-1.5 font-mono text-xs select-all text-indigo-650 font-bold">
+                    <div className="p-3 bg-white border border-emerald-100 rounded-xl space-y-1">
+                      <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">Simulated Security Code:</span>
+                      <code className="block bg-slate-50 border rounded-lg px-2.5 py-1.5 font-mono text-xs select-all text-indigo-650 font-bold text-center">
                         {generatedToken}
                       </code>
                     </div>
@@ -744,20 +786,31 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
                           id="forgot-email"
                           type="email"
                           required
+                          disabled={isSendingMail}
                           value={forgotEmail}
                           onChange={e => setForgotEmail(e.target.value)}
                           placeholder="e.g. guest@classroom.com"
-                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 transition font-bold text-slate-700"
+                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 transition font-bold text-slate-700 disabled:opacity-60"
                         />
                       </div>
                     </div>
 
                     <button
                       type="submit"
-                      className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 text-white text-xs font-black rounded-xl cursor-pointer transition shadow-xl shadow-indigo-150 flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                      disabled={isSendingMail}
+                      className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-black rounded-xl cursor-pointer transition shadow-xl shadow-indigo-150 flex items-center justify-center gap-1.5 active:scale-[0.98]"
                     >
-                      <span>Simulate Recovery Email</span>
-                      <ArrowRight className="w-4 h-4" />
+                      {isSendingMail ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          <span>Sending Verification Email...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Send Verification Email</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
                     </button>
                   </form>
                 )}

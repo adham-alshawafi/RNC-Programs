@@ -19,7 +19,8 @@ import {
   Filter,
   ChevronsUpDown,
   Grid,
-  LogOut
+  LogOut,
+  UserX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -68,98 +69,171 @@ export default function App() {
     // Checkbox longevity: if Checked/remember -> 7 days, else 1 hour
     const duration = remember ? 7 * 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
     localStorage.setItem('attendance_session_expires_at', (Date.now() + duration).toString());
+
+    // Securely pull isolated states for this specific logged in user session
+    const email = user.email.toLowerCase().trim();
+    
+    const savedProgs = localStorage.getItem(`attendance_${email}_programs`);
+    setPrograms(savedProgs ? JSON.parse(savedProgs) : []);
+
+    const savedExpanded = localStorage.getItem(`attendance_${email}_expanded_programs`);
+    setExpandedPrograms(savedExpanded ? JSON.parse(savedExpanded) : {});
+
+    const savedSections = localStorage.getItem(`attendance_${email}_sections`);
+    setSections(savedSections ? JSON.parse(savedSections) : []);
+
+    const savedStudents = localStorage.getItem(`attendance_${email}_students`);
+    setStudents(savedStudents ? JSON.parse(savedStudents) : []);
+
+    const savedAttendance = localStorage.getItem(`attendance_${email}_map`);
+    setAttendance(savedAttendance ? JSON.parse(savedAttendance) : {});
+
+    const savedMarked = localStorage.getItem(`attendance_${email}_marked_dates`);
+    setMarkedDates(savedMarked ? JSON.parse(savedMarked) : {});
+
+    const savedSubmitted = localStorage.getItem(`attendance_${email}_submitted_dates`);
+    setSubmittedDates(savedSubmitted ? JSON.parse(savedSubmitted) : {});
+
+    const savedHolidays = localStorage.getItem(`attendance_${email}_holidays`);
+    setHolidays(savedHolidays ? JSON.parse(savedHolidays) : {});
+
+    const savedNotes = localStorage.getItem(`attendance_${email}_notes`);
+    setAttendanceNotes(savedNotes ? JSON.parse(savedNotes) : {});
+
+    const savedActiveSecId = localStorage.getItem(`attendance_${email}_active_section_id`);
+    setActiveSectionId(savedActiveSecId || '');
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
     localStorage.removeItem('attendance_current_user');
     localStorage.removeItem('attendance_session_expires_at');
+
+    // Wipe memory back to empty defaults so absolutely nothing leaks to the standard layout
+    setPrograms([]);
+    setExpandedPrograms({});
+    setSections([]);
+    setStudents([]);
+    setAttendance({});
+    setMarkedDates({});
+    setSubmittedDates({});
+    setHolidays({});
+    setAttendanceNotes({});
+    setActiveSectionId('');
   };
 
-  // 1. Core State
+  const handleDeleteAccount = () => {
+    if (!currentUser) return;
+    const email = currentUser.email.toLowerCase().trim();
+
+    // 1. Remove user from register list
+    const updatedUsers = users.filter(u => u.email.toLowerCase().trim() !== email);
+    setUsers(updatedUsers);
+    localStorage.setItem('attendance_registered_users', JSON.stringify(updatedUsers));
+
+    // 2. Erase user-specific isolated local storage keys
+    localStorage.removeItem(`attendance_${email}_programs`);
+    localStorage.removeItem(`attendance_${email}_expanded_programs`);
+    localStorage.removeItem(`attendance_${email}_sections`);
+    localStorage.removeItem(`attendance_${email}_students`);
+    localStorage.removeItem(`attendance_${email}_map`);
+    localStorage.removeItem(`attendance_${email}_marked_dates`);
+    localStorage.removeItem(`attendance_${email}_submitted_dates`);
+    localStorage.removeItem(`attendance_${email}_holidays`);
+    localStorage.removeItem(`attendance_${email}_notes`);
+    localStorage.removeItem(`attendance_${email}_active_section_id`);
+
+    // 3. Clear reset tokens specifically for this user
+    const savedTokens = JSON.parse(localStorage.getItem('attendance_reset_tokens') || '{}');
+    if (savedTokens[email]) {
+      delete savedTokens[email];
+      localStorage.setItem('attendance_reset_tokens', JSON.stringify(savedTokens));
+    }
+
+    // 4. Trigger logout for full memory flush
+    handleLogout();
+  };
+
+  // 1. Core State - Empty by default for pristine first-time experiences
   const [programs, setPrograms] = useState<Program[]>(() => {
-    const saved = localStorage.getItem('attendance_programs');
-    return saved ? JSON.parse(saved) : INITIAL_PROGRAMS;
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return [];
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_programs`);
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [expandedPrograms, setExpandedPrograms] = useState<Record<string, boolean>>(() => {
-    const saved = localStorage.getItem('attendance_expanded_programs');
-    return saved ? JSON.parse(saved) : { 'prog-english': true, 'prog-vibe': true };
-  });
-
-  const [sections, setSections] = useState<Section[]>(() => {
-    const saved = localStorage.getItem('attendance_sections');
-    let loaded: Section[] = saved ? JSON.parse(saved) : INITIAL_SECTIONS;
-    // Check if Pre-starter is in there
-    const hasPreStarter = loaded.some(s => s.id === 'sec-pre-starter' || s.name.toLowerCase() === 'pre-starter');
-    if (!hasPreStarter) {
-      const idx = loaded.findIndex(s => s.id === 'sec-beginner');
-      const newItem: Section = { id: 'sec-pre-starter', name: 'Pre-starter', programId: 'prog-english', isCustom: false };
-      if (idx !== -1) {
-        loaded = [...loaded.slice(0, idx + 1), newItem, ...loaded.slice(idx + 1)];
-      } else {
-        loaded = [newItem, ...loaded];
-      }
-    }
-    return loaded;
-  });
-
-  const [students, setStudents] = useState<Student[]>(() => {
-    const saved = localStorage.getItem('attendance_students');
-    let loaded: Student[] = saved ? JSON.parse(saved) : INITIAL_STUDENTS;
-    const preStarterStudentsExist = loaded.some(std => std.sectionId === 'sec-pre-starter');
-    if (!preStarterStudentsExist) {
-      loaded = [
-        ...loaded,
-        { id: 'std-ps1', name: 'Diana Prince', sectionId: 'sec-pre-starter' },
-        { id: 'std-ps2', name: 'Bruce Wayne', sectionId: 'sec-pre-starter' }
-      ];
-    }
-    return loaded;
-  });
-
-  const [attendance, setAttendance] = useState<AttendanceMap>(() => {
-    const saved = localStorage.getItem('attendance_map');
-    return saved ? JSON.parse(saved) : getInitialAttendance();
-  });
-
-  const [markedDates, setMarkedDates] = useState<Record<string, string[]>>(() => {
-    const saved = localStorage.getItem('attendance_marked_dates');
-    const parsed = saved ? JSON.parse(saved) : INITIAL_MARKED_DATES;
-    if (parsed && !parsed['sec-pre-starter']) {
-      parsed['sec-pre-starter'] = parsed['sec-beginner'] || ['2026-05-28', '2026-05-29', '2026-05-30'];
-    }
-    return parsed;
-  });
-
-  const [submittedDates, setSubmittedDates] = useState<Record<string, string[]>>(() => {
-    const saved = localStorage.getItem('attendance_submitted_dates');
-    const parsed = saved ? JSON.parse(saved) : INITIAL_MARKED_DATES;
-    if (parsed && !parsed['sec-pre-starter']) {
-      parsed['sec-pre-starter'] = parsed['sec-beginner'] || ['2026-05-28', '2026-05-29', '2026-05-30'];
-    }
-    return parsed;
-  });
-
-  const [holidays, setHolidays] = useState<Record<string, string[]>>(() => {
-    const saved = localStorage.getItem('attendance_holidays');
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return {};
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_expanded_programs`);
     return saved ? JSON.parse(saved) : {};
   });
 
-  useEffect(() => {
-    localStorage.setItem('attendance_holidays', JSON.stringify(holidays));
-  }, [holidays]);
+  const [sections, setSections] = useState<Section[]>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return [];
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_sections`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [students, setStudents] = useState<Student[]>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return [];
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_students`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [attendance, setAttendance] = useState<AttendanceMap>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return {};
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_map`);
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  const [markedDates, setMarkedDates] = useState<Record<string, string[]>>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return {};
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_marked_dates`);
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  const [submittedDates, setSubmittedDates] = useState<Record<string, string[]>>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return {};
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_submitted_dates`);
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  const [holidays, setHolidays] = useState<Record<string, string[]>>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return {};
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_holidays`);
+    return saved ? JSON.parse(saved) : {};
+  });
 
   const [attendanceNotes, setAttendanceNotes] = useState<AttendanceNotesMap>(() => {
-    const saved = localStorage.getItem('attendance_notes');
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return {};
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_notes`);
     return saved ? JSON.parse(saved) : {};
   });
 
   // Navigation / Filter States
   const [activeSectionId, setActiveSectionId] = useState<string>(() => {
-    const saved = localStorage.getItem('attendance_sections');
-    const parsed = saved ? JSON.parse(saved) : INITIAL_SECTIONS;
-    return parsed[0]?.id || 'sec-beginner';
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return '';
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_active_section_id`);
+    return saved || '';
   });
 
   const [activeTab, setActiveTab] = useState<'attendance' | 'weekly_grid' | 'students' | 'calculator'>('attendance');
@@ -185,38 +259,78 @@ export default function App() {
   const [deletingSection, setDeletingSection] = useState<Section | null>(null);
   const [sectionToMergeId, setSectionToMergeId] = useState<string>('');
 
-  // Save states to LocalStorage on updates
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+
+  // Securely persist states to user-specific slots in LocalStorage on updates
   useEffect(() => {
-    localStorage.setItem('attendance_programs', JSON.stringify(programs));
-  }, [programs]);
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_programs`, JSON.stringify(programs));
+    }
+  }, [programs, currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('attendance_expanded_programs', JSON.stringify(expandedPrograms));
-  }, [expandedPrograms]);
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_expanded_programs`, JSON.stringify(expandedPrograms));
+    }
+  }, [expandedPrograms, currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('attendance_sections', JSON.stringify(sections));
-  }, [sections]);
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_sections`, JSON.stringify(sections));
+    }
+  }, [sections, currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('attendance_students', JSON.stringify(students));
-  }, [students]);
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_students`, JSON.stringify(students));
+    }
+  }, [students, currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('attendance_map', JSON.stringify(attendance));
-  }, [attendance]);
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_map`, JSON.stringify(attendance));
+    }
+  }, [attendance, currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('attendance_marked_dates', JSON.stringify(markedDates));
-  }, [markedDates]);
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_marked_dates`, JSON.stringify(markedDates));
+    }
+  }, [markedDates, currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('attendance_submitted_dates', JSON.stringify(submittedDates));
-  }, [submittedDates]);
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_submitted_dates`, JSON.stringify(submittedDates));
+    }
+  }, [submittedDates, currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('attendance_notes', JSON.stringify(attendanceNotes));
-  }, [attendanceNotes]);
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_holidays`, JSON.stringify(holidays));
+    }
+  }, [holidays, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_notes`, JSON.stringify(attendanceNotes));
+    }
+  }, [attendanceNotes, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_active_section_id`, activeSectionId);
+    }
+  }, [activeSectionId, currentUser]);
 
   // Find active section helper
   const activeSection = sections.find(s => s.id === activeSectionId) || sections[0];
@@ -601,10 +715,18 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="p-1 hover:bg-rose-50 hover:text-rose-600 text-slate-400 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
+                className="p-1 hover:bg-slate-150 hover:bg-slate-100 hover:text-indigo-600 text-slate-400 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
                 title="Log out of Secure Session"
               >
                 <LogOut className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDeleteAccountModal(true)}
+                className="p-1 hover:bg-rose-50 hover:text-rose-600 text-slate-400 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
+                title="Delete Account & All Saved Data"
+              >
+                <UserX className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
@@ -648,173 +770,192 @@ export default function App() {
 
             {/* List of Programs / Folders */}
             <div className="space-y-3.5">
-              {programs.map(prog => {
-                const isExpanded = expandedPrograms[prog.id] !== false;
-                const isEditingProg = editingProgramId === prog.id;
-                const progSections = sections.filter(s => s.programId === prog.id);
-                const totalStudentsInProg = students.filter(std => progSections.some(s => s.id === std.sectionId)).length;
+              {programs.length === 0 ? (
+                <div className="py-6 px-3 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                  <p className="text-[11px] font-bold text-slate-500 leading-normal mb-2">No Programs Created Yet</p>
+                  <p className="text-[10px] text-slate-400 mb-3.5">Please add your first Academic Program folder and class section to start tracking students.</p>
+                  <button
+                    onClick={() => setShowAddProgramModal(true)}
+                    className="px-3 py-1.5 bg-indigo-650 text-white rounded-lg text-[10px] font-black hover:bg-indigo-700 cursor-pointer active:scale-95 transition mx-auto block"
+                  >
+                    + Add Academic Program
+                  </button>
+                </div>
+              ) : (
+                programs.map(prog => {
+                  const isExpanded = expandedPrograms[prog.id] !== false;
+                  const isEditingProg = editingProgramId === prog.id;
+                  const progSections = sections.filter(s => s.programId === prog.id);
+                  const totalStudentsInProg = students.filter(std => progSections.some(s => s.id === std.sectionId)).length;
 
-                return (
-                  <div key={prog.id} className="space-y-1">
-                    {/* Program Header Folder Button */}
-                    <div className="group/prog flex items-center justify-between p-1 rounded-lg hover:bg-slate-50 transition-colors">
-                      {isEditingProg ? (
-                        <div className="flex items-center gap-1 w-full p-1 bg-white border border-slate-200 rounded-lg">
-                          <input
-                            type="text"
-                            value={editingProgramName}
-                            onChange={e => setEditingProgramName(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') handleSaveEditProgram(prog.id);
-                              if (e.key === 'Escape') setEditingProgramId(null);
-                            }}
-                            className="w-full px-1.5 py-0.5 text-slate-800 text-xxs font-semibold focus:outline-none bg-slate-50/50 rounded"
-                            autoFocus
-                          />
-                          <button onClick={() => handleSaveEditProgram(prog.id)} className="p-0.5 text-emerald-600 shrink-0 cursor-pointer">
-                            <Check className="w-3 h-3" />
-                          </button>
-                          <button onClick={() => setEditingProgramId(null)} className="p-0.5 text-rose-500 shrink-0 cursor-pointer">
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <button
-                            onClick={() => {
-                              setExpandedPrograms(prev => ({
-                                ...prev,
-                                [prog.id]: !isExpanded
-                              }));
-                            }}
-                            className="flex-1 flex items-center gap-1.5 text-left text-xs font-bold text-slate-800 hover:text-indigo-600 cursor-pointer py-1 truncate"
-                          >
-                            {isExpanded ? (
-                              <FolderOpen className="w-4 h-4 text-amber-500 shrink-0" />
-                            ) : (
-                              <Folder className="w-4 h-4 text-amber-500 shrink-0" />
-                            )}
-                            <span className="truncate">{prog.name}</span>
-                          </button>
-
-                          <div className="flex items-center gap-1 opacity-0 group-hover/prog:opacity-100 transition-opacity">
-                            <button
-                              onClick={() => {
-                                setEditingProgramId(prog.id);
-                                setEditingProgramName(prog.name);
+                  return (
+                    <div key={prog.id} className="space-y-1">
+                      {/* Program Header Folder Button */}
+                      <div className="group/prog flex items-center justify-between p-1 rounded-lg hover:bg-slate-50 transition-colors">
+                        {isEditingProg ? (
+                          <div className="flex items-center gap-1 w-full p-1 bg-white border border-slate-200 rounded-lg">
+                            <input
+                              type="text"
+                              value={editingProgramName}
+                              onChange={e => setEditingProgramName(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleSaveEditProgram(prog.id);
+                                if (e.key === 'Escape') setEditingProgramId(null);
                               }}
-                              className="p-0.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors cursor-pointer"
-                              title="Rename Program"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
+                              className="w-full px-1.5 py-0.5 text-slate-800 text-xxs font-semibold focus:outline-none bg-slate-50/50 rounded"
+                              autoFocus
+                            />
+                            <button onClick={() => handleSaveEditProgram(prog.id)} className="p-0.5 text-emerald-600 shrink-0 cursor-pointer border-none bg-transparent">
+                              <Check className="w-3 h-3" />
                             </button>
-                            <button
-                              onClick={() => setDeletingProgram(prog)}
-                              className="p-0.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                              title="Delete Program"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
+                            <button onClick={() => setEditingProgramId(null)} className="p-0.5 text-rose-500 shrink-0 cursor-pointer border-none bg-transparent">
+                              <X className="w-3 h-3" />
                             </button>
                           </div>
-
-                          {/* Student indicator badge in parent program */}
-                          <div className="ml-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-400 font-extrabold text-[9px] scale-90 shrink-0 select-none">
-                            {totalStudentsInProg}
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Program's Courses/Sections */}
-                    {isExpanded && (
-                      <div className="pl-3 border-l border-slate-100 ml-2.5 space-y-0.5">
-                        {progSections.length === 0 ? (
-                          <p className="text-[10px] text-slate-400 italic py-1 pl-2.5 select-none">No course sections</p>
                         ) : (
-                          progSections.map(sec => {
-                            const isActive = sec.id === activeSectionId;
-                            const isEditingSec = editingSectionId === sec.id;
-                            const count = students.filter(s => s.sectionId === sec.id).length;
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpandedPrograms(prev => ({
+                                  ...prev,
+                                  [prog.id]: !isExpanded
+                                }));
+                              }}
+                              className="flex-1 flex items-center gap-1.5 text-left text-xs font-bold text-slate-800 hover:text-indigo-600 cursor-pointer py-1 truncate"
+                            >
+                              {isExpanded ? (
+                                <FolderOpen className="w-4 h-4 text-amber-500 shrink-0" />
+                              ) : (
+                                <Folder className="w-4 h-4 text-amber-500 shrink-0" />
+                              )}
+                              <span className="truncate">{prog.name}</span>
+                            </button>
 
-                            return (
-                              <div
-                                key={sec.id}
-                                className={`group/sec w-full flex items-center justify-between rounded-xl px-2.5 py-1.5 text-[11px] font-semibold transition-all ${
-                                  isActive
-                                    ? 'bg-indigo-600 text-white shadow-xs'
-                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
-                                }`}
+                            <div className="flex items-center gap-1 opacity-0 group-hover/prog:opacity-100 transition-opacity">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingProgramId(prog.id);
+                                  setEditingProgramName(prog.name);
+                                }}
+                                className="p-0.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors cursor-pointer"
+                                title="Rename Program"
                               >
-                                {isEditingSec ? (
-                                  <div className="flex items-center gap-1 w-full">
-                                    <input
-                                      type="text"
-                                      value={editingSectionName}
-                                      onChange={e => setEditingSectionName(e.target.value)}
-                                      onKeyDown={e => {
-                                        if (e.key === 'Enter') handleSaveEditSection(sec.id);
-                                        if (e.key === 'Escape') handleCancelEditSection();
-                                      }}
-                                      className="w-full px-1.5 py-0.5 text-slate-800 bg-white border border-indigo-300 rounded text-xxs focus:outline-none"
-                                      autoFocus
-                                    />
-                                    <button onClick={() => handleSaveEditSection(sec.id)} className="p-0.5 text-emerald-600 cursor-pointer">
-                                      <Check className="w-3 h-3" />
-                                    </button>
-                                    <button onClick={handleCancelEditSection} className="p-0.5 text-rose-500 cursor-pointer">
-                                      <X className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <button
-                                      onClick={() => {
-                                        setActiveSectionId(sec.id);
-                                        setEditingSectionId(null);
-                                      }}
-                                      className="flex-1 text-left truncate cursor-pointer font-medium py-0.5"
-                                    >
-                                      {sec.name}
-                                    </button>
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeletingProgram(prog)}
+                                className="p-0.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                title="Delete Program"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
 
-                                    <div className="flex items-center gap-1 opacity-0 group-hover/sec:opacity-100 transition-opacity">
-                                      <button
-                                        onClick={() => handleStartEditSection(sec)}
-                                        className={`p-0.5 rounded transition ${
-                                          isActive ? 'text-indigo-200 hover:text-white' : 'text-slate-400 hover:text-indigo-600'
-                                        }`}
-                                        title="Rename Section"
-                                      >
-                                        <Edit3 className="w-3 h-3" />
-                                      </button>
-                                      <button
-                                        onClick={() => handleRequestDeleteSection(sec)}
-                                        className={`p-0.5 rounded transition ${
-                                          isActive ? 'text-indigo-200 hover:text-white hover:bg-indigo-700/50' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
-                                        }`}
-                                        title="Delete Section"
-                                      >
-                                        <Trash2 className="w-3 h-3" />
-                                      </button>
-                                    </div>
-
-                                    {/* Student Count display badge */}
-                                    <span className={`ml-2 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
-                                      isActive ? 'bg-indigo-750 text-indigo-100' : 'bg-slate-100 text-slate-500'
-                                    }`}>
-                                      {count}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            );
-                          })
+                            {/* Student indicator badge in parent program */}
+                            <div className="ml-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-400 font-extrabold text-[9px] scale-90 shrink-0 select-none">
+                              {totalStudentsInProg}
+                            </div>
+                          </>
                         )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
+
+                      {/* Program's Courses/Sections */}
+                      {isExpanded && (
+                        <div className="pl-3 border-l border-slate-100 ml-2.5 space-y-0.5">
+                          {progSections.length === 0 ? (
+                            <p className="text-[10px] text-slate-400 italic py-1 pl-2.5 select-none font-display">No course sections</p>
+                          ) : (
+                            progSections.map(sec => {
+                              const isActive = sec.id === activeSectionId;
+                              const isEditingSec = editingSectionId === sec.id;
+                              const count = students.filter(s => s.sectionId === sec.id).length;
+
+                              return (
+                                <div
+                                  key={sec.id}
+                                  className={`group/sec w-full flex items-center justify-between rounded-xl px-2.5 py-1.5 text-[11px] font-semibold transition-all ${
+                                    isActive
+                                      ? 'bg-indigo-600 text-white shadow-xs'
+                                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                                  }`}
+                                >
+                                  {isEditingSec ? (
+                                    <div className="flex items-center gap-1 w-full">
+                                      <input
+                                        type="text"
+                                        value={editingSectionName}
+                                        onChange={e => setEditingSectionName(e.target.value)}
+                                        onKeyDown={e => {
+                                          if (e.key === 'Enter') handleSaveEditSection(sec.id);
+                                          if (e.key === 'Escape') handleCancelEditSection();
+                                        }}
+                                        className="w-full px-1.5 py-0.5 text-slate-800 bg-white border border-indigo-300 rounded text-xxs focus:outline-none"
+                                        autoFocus
+                                      />
+                                      <button type="button" onClick={() => handleSaveEditSection(sec.id)} className="p-0.5 text-emerald-600 cursor-pointer">
+                                        <Check className="w-3 h-3" />
+                                      </button>
+                                      <button type="button" onClick={handleCancelEditSection} className="p-0.5 text-rose-500 cursor-pointer">
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setActiveSectionId(sec.id);
+                                          setEditingSectionId(null);
+                                        }}
+                                        className="flex-1 text-left truncate cursor-pointer font-medium py-0.5"
+                                      >
+                                        {sec.name}
+                                      </button>
+
+                                      <div className="flex items-center gap-1 opacity-0 group-hover/sec:opacity-100 transition-opacity">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleStartEditSection(sec)}
+                                          className={`p-0.5 rounded transition ${
+                                            isActive ? 'text-indigo-200 hover:text-white' : 'text-slate-400 hover:text-indigo-600'
+                                          }`}
+                                          title="Rename Section"
+                                        >
+                                          <Edit3 className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRequestDeleteSection(sec)}
+                                          className={`p-0.5 rounded transition ${
+                                            isActive ? 'text-indigo-200 hover:text-white hover:bg-indigo-700/50' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                                          }`}
+                                          title="Delete Section"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </button>
+                                      </div>
+
+                                      {/* Student Count display badge */}
+                                      <span className={`ml-2 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
+                                        isActive ? 'bg-indigo-750 text-indigo-100' : 'bg-slate-100 text-slate-500'
+                                      }`}>
+                                        {count}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -1399,6 +1540,76 @@ export default function App() {
                   className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl cursor-pointer transition-colors"
                 >
                   Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* DELETE ACCOUNT CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {showDeleteAccountModal && (
+          <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl border border-slate-100 w-full max-w-md overflow-hidden"
+            >
+              <div className="px-6 py-5 bg-red-50 border-b border-red-100 flex items-center gap-3">
+                <div className="p-2 bg-red-150 bg-red-100 text-red-700 rounded-xl">
+                  <UserX className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-red-950 font-display">Delete Account Permanently?</h3>
+                  <p className="text-[10px] text-red-700 font-semibold">This action cannot be undone</p>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  You are about to permanently delete your account (<strong className="text-slate-805 text-slate-800">{currentUser.email}</strong>) and all associated local databases.
+                </p>
+
+                <div className="bg-slate-50/50 p-3.5 rounded-xl border border-slate-100 space-y-2 text-[11px] text-slate-500 font-medium">
+                  <div className="flex items-start gap-2">
+                    <span className="text-rose-500 font-bold shrink-0">✕</span>
+                    <span>All academic programs and section folders are wiped</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-rose-500 font-bold shrink-0">✕</span>
+                    <span>All student registrations and classes are completely removed</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-rose-500 font-bold shrink-0">✕</span>
+                    <span>All attendance checklists and historical records are wiped</span>
+                  </div>
+                </div>
+
+                <p className="text-xxs text-amber-600 font-bold leading-normal bg-amber-50/50 p-3 rounded-lg border border-amber-100 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                  <span>Once deleted, your local credentials list is freed. You can instantly register again using this exact same email to start fresh!</span>
+                </p>
+              </div>
+
+              <div className="px-6 py-4.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteAccountModal(false)}
+                  className="px-4 py-2 bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-semibold rounded-xl cursor-pointer transition-colors"
+                >
+                  Keep My Account
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDeleteAccount();
+                    setShowDeleteAccountModal(false);
+                  }}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl cursor-pointer transition-all shadow-sm shadow-rose-100"
+                >
+                  Delete Account & Wipe Data
                 </button>
               </div>
             </motion.div>

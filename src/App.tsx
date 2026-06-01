@@ -1223,6 +1223,7 @@ export default function App() {
                   onUpdateNote={handleUpdateNote}
                   onSubmitDate={handleSubmitDate}
                   onUnsubmitDate={handleUnsubmitDate}
+                  holidays={holidays}
                 />
               )}
 

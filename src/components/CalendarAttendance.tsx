@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Check, X, Calendar as CalendarIcon, UserCheck, AlertCircle, MessageSquare, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, X, Calendar as CalendarIcon, UserCheck, AlertCircle, MessageSquare, FileText, Coffee } from 'lucide-react';
 import { Student, AttendanceMap, AttendanceStatus, Section, AttendanceNotesMap } from '../types';
 
 interface CalendarAttendanceProps {
@@ -17,6 +17,7 @@ interface CalendarAttendanceProps {
   onUpdateNote: (date: string, studentId: string, note: string) => void;
   onSubmitDate: (date: string, sectionId: string) => void;
   onUnsubmitDate: (date: string, sectionId: string) => void;
+  holidays: Record<string, string[]>;
 }
 
 export default function CalendarAttendance({
@@ -34,6 +35,7 @@ export default function CalendarAttendance({
   onUpdateNote,
   onSubmitDate,
   onUnsubmitDate,
+  holidays,
 }: CalendarAttendanceProps) {
   // Calendar internal tracking (viewing month/year)
   const [currentYear, setCurrentYear] = useState(2026);
@@ -52,6 +54,8 @@ export default function CalendarAttendance({
   const sectionStudents = students.filter(std => std.sectionId === activeSection.id);
   const sectionMarkedDates = markedDates[activeSection.id] || [];
   const sectionSubmittedDates = submittedDates[activeSection.id] || [];
+  const sectionHolidays = holidays[activeSection.id] || [];
+  const isHolidayActiveDate = sectionHolidays.includes(selectedDate);
 
   // Month names helper
   const MONTHS = [
@@ -180,6 +184,7 @@ export default function CalendarAttendance({
             {calendarCells.map((cell, idx) => {
               const isSelected = cell.dateString === selectedDate;
               const hasMarked = sectionMarkedDates.includes(cell.dateString);
+              const isHoliday = sectionHolidays.includes(cell.dateString);
               
               // Check if selected date cell is today
               const todayStr = new Date().toISOString().split('T')[0];
@@ -202,11 +207,19 @@ export default function CalendarAttendance({
                       ? 'text-slate-300 hover:bg-slate-50'
                       : isToday
                       ? 'bg-amber-50/50 border border-amber-200 text-amber-800 hover:bg-amber-100 hover:text-amber-900'
+                      : isHoliday
+                      ? 'bg-amber-50/30 border border-amber-200/50 text-amber-700 hover:bg-amber-100/55'
                       : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
                   <span>{cell.dayNum}</span>
                   
+                  {isHoliday && (
+                    <Coffee className={`absolute top-0.5 right-0.5 w-2.5 h-2.5 ${
+                      isSelected ? 'text-indigo-200' : 'text-amber-500 animate-pulse'
+                    }`} />
+                  )}
+
                   {/* Mark Indicator (subtle dot) */}
                   {hasMarked && (
                     <span className={`absolute bottom-1 w-1.2 h-1.2 rounded-full ${
@@ -233,9 +246,17 @@ export default function CalendarAttendance({
               <span>Submitted & Calculated</span>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 pt-0.5 border-t border-dotted border-slate-100">
-            <span className="w-3.5 h-3.5 rounded bg-amber-50 border border-amber-200 block shrink-0"></span>
-            <span>Today's Academic Date</span>
+          <div className="flex items-center justify-between gap-1.5 pt-0.5 border-t border-dotted border-slate-100">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 rounded bg-amber-50 border border-amber-200 block shrink-0"></span>
+              <span>Today's Date</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 rounded bg-amber-50/45 border border-amber-200/50 flex items-center justify-center shrink-0">
+                <Coffee className="w-2.5 h-2.5 text-amber-500" />
+              </span>
+              <span>School Holiday</span>
+            </div>
           </div>
         </div>
       </div>
@@ -246,12 +267,26 @@ export default function CalendarAttendance({
           {/* Header line */}
           <div className="border-b border-slate-100 pb-5 mb-5 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
-                <CalendarIcon className="w-5 h-5" />
+              <div className={`p-2 rounded-xl transition-colors ${
+                isHolidayActiveDate
+                  ? 'bg-amber-50 text-amber-600 border border-amber-200/50'
+                  : 'bg-emerald-50 text-emerald-600'
+              }`}>
+                {isHolidayActiveDate ? (
+                  <Coffee className="w-5 h-5 animate-pulse" />
+                ) : (
+                  <CalendarIcon className="w-5 h-5" />
+                )}
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-slate-800">
-                  {formatFriendlyDate(selectedDate)}
+                <h4 className="text-sm font-semibold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                  <span>{formatFriendlyDate(selectedDate)}</span>
+                  {isHolidayActiveDate && (
+                    <span className="px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 rounded-full text-[9px] font-black uppercase tracking-wider flex items-center gap-1 animate-fade-in select-none">
+                      <Coffee className="w-2.5 h-2.5 text-amber-500 animate-pulse" />
+                      <span>Holiday</span>
+                    </span>
+                  )}
                 </h4>
                 <p className="text-xs text-slate-500">
                   Roll check for <span className="font-semibold text-slate-700">{activeSection.name}</span>
@@ -303,6 +338,17 @@ export default function CalendarAttendance({
                     Clear Records
                   </button>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Holiday Alert Banner */}
+          {isHolidayActiveDate && (
+            <div className="mb-4 p-3.5 bg-amber-50/70 border border-amber-200/50 rounded-xl flex items-start gap-2.5 text-amber-800 animate-fade-in select-none">
+              <Coffee className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 animate-bounce" />
+              <div className="text-xxs leading-relaxed">
+                <strong className="text-amber-950 font-black block mb-0.5 uppercase tracking-wider flex items-center gap-1">School Holiday Active</strong>
+                This date is marked as a school holiday for <span className="font-extrabold">{activeSection.name}</span>. Attendance details entered here will be recorded, but calculations will automatically skip this date when compiling main metrics.
               </div>
             </div>
           )}

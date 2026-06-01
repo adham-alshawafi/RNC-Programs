@@ -1,0 +1,6 @@
+{
+  "name": "Student Attendance Tracker",
+  "description": "A clean, modern React student attendance tracking and management application.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -18,9 +18,11 @@ import {
   CheckCircle, 
   AlertCircle,
   Clock,
-  Key
+  Key,
+  Chrome
 } from 'lucide-react';
 import bcrypt from 'bcryptjs';
+import { googleSignIn } from '../lib/firebaseAuth';
 
 export interface UserAccount {
   id: string;
@@ -28,7 +30,20 @@ export interface UserAccount {
   email: string;
   passwordHash: string;
   createdAt: string;
+  securityQuestion?: string;
+  securityAnswer?: string;
+  isGoogleAccount?: boolean;
 }
+
+export const STANDARD_QUESTIONS = [
+  "What is your favorite school subject?",
+  "What was the name of your first school?",
+  "What was the name of your first pet?",
+  "What was the model of your first car?",
+  "In what city were you born?",
+  "What is your favorite book?",
+  "Custom Security Question..."
+];
 
 export interface AuthSession {
   userId: string;
@@ -63,6 +78,14 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regError, setRegError] = useState('');
   const [isHashing, setIsHashing] = useState(false);
+  const [regSecurityQuestion, setRegSecurityQuestion] = useState(STANDARD_QUESTIONS[0]);
+  const [regCustomQuestion, setRegCustomQuestion] = useState('');
+  const [regSecurityAnswer, setRegSecurityAnswer] = useState('');
+
+  // Password Recovery / Security Question States
+  const [matchedUser, setMatchedUser] = useState<UserAccount | null>(null);
+  const [securityAnswerInput, setSecurityAnswerInput] = useState('');
+  const [securityAnswerError, setSecurityAnswerError] = useState('');
 
   // Login States
   const [loginEmail, setLoginEmail] = useState('guest@classroom.com');
@@ -70,6 +93,8 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [loginError, setLoginError] = useState('');
+  const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
+  const [googleSignInError, setGoogleSignInError] = useState('');
 
   // Forgot Password States
   const [forgotEmail, setForgotEmail] = useState('');
@@ -171,6 +196,15 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
       setRegError('Password must be at least 6 characters.');
       return;
     }
+    const finalQuestion = regSecurityQuestion === "Custom Security Question..." ? regCustomQuestion.trim() : regSecurityQuestion;
+    if (!finalQuestion) {
+      setRegError('Please specify a security question.');
+      return;
+    }
+    if (!regSecurityAnswer.trim()) {
+      setRegError('Please provide an answer to your security question.');
+      return;
+    }
     const emailLower = regEmail.toLowerCase().trim();
     if (users.some(u => u.email.toLowerCase().trim() === emailLower)) {
       setRegError('An account with this email already exists.');
@@ -189,7 +223,9 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
           fullName: regName.trim() || undefined,
           email: emailLower,
           passwordHash: hash,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          securityQuestion: finalQuestion,
+          securityAnswer: regSecurityAnswer.trim().toLowerCase()
         };
 
         const updatedUsers = [...users, newAcc];
@@ -202,6 +238,9 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
         setRegEmail('');
         setRegPassword('');
         setRegConfirmPassword('');
+        setRegSecurityQuestion(STANDARD_QUESTIONS[0]);
+        setRegCustomQuestion('');
+        setRegSecurityAnswer('');
         
         // Auto sign-in or redirect with success
         onLoginSuccess(newAcc, rememberMe);
@@ -236,6 +275,116 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
     }
 
     onLoginSuccess(existingUser, rememberMe);
+  };
+
+  // Handle Google Sign-In
+  const handleGoogleSignIn = async () => {
+    try {
+      setIsGoogleSigningIn(true);
+      setGoogleSignInError('');
+      setLoginError('');
+      
+      const result = await googleSignIn();
+      if (result) {
+        const { user } = result;
+        const emailLower = user.email ? user.email.toLowerCase().trim() : '';
+        if (!emailLower) {
+          throw new Error('Google account is missing an email address.');
+        }
+        
+        // Find existing user or register automatically for dynamic Google multi-user sandbox
+        let existingUser = users.find(u => u.email.toLowerCase().trim() === emailLower);
+        if (!existingUser) {
+          const salt = bcrypt.genSaltSync(10);
+          const dummyHash = bcrypt.hashSync(Math.random().toString(36), salt);
+          existingUser = {
+            id: 'user-' + Math.random().toString(36).substr(2, 9),
+            fullName: user.displayName || 'Academic Officer',
+            email: emailLower,
+            passwordHash: dummyHash,
+            createdAt: new Date().toISOString(),
+            securityQuestion: 'What is your favorite school subject?',
+            securityAnswer: 'mathematics',
+            isGoogleAccount: true,
+          };
+          const updatedUsers = [...users, existingUser];
+          setUsers(updatedUsers);
+          localStorage.setItem('attendance_registered_users', JSON.stringify(updatedUsers));
+        }
+        
+        onLoginSuccess(existingUser, rememberMe);
+      }
+    } catch (err: any) {
+      console.error('Google Sign-In Error:', err);
+      if (err.code === 'auth/popup-closed-by-user') {
+        setGoogleSignInError('The secure Google sign-in window was closed.');
+      } else {
+        setGoogleSignInError(err.message || 'Failed to sign in with Google.');
+      }
+    } finally {
+      setIsGoogleSigningIn(false);
+    }
+  };
+
+  // Find account email check
+  const handleCheckEmail = (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+    setSecurityAnswerError('');
+    setSecurityAnswerInput('');
+    setMatchedUser(null);
+
+    if (!forgotEmail.trim()) {
+      setForgotError('Please specify your registered email.');
+      return;
+    }
+
+    const emailLower = forgotEmail.toLowerCase().trim();
+    const existingUser = users.find(u => u.email.toLowerCase().trim() === emailLower);
+
+    if (!existingUser) {
+      setForgotError('Enter a currently registered tester email address.');
+      return;
+    }
+
+    setMatchedUser(existingUser);
+  };
+
+  // Verify security question answer and reset
+  const handleSecurityAnswerVerify = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSecurityAnswerError('');
+    if (!matchedUser) return;
+    
+    const ansLower = securityAnswerInput.trim().toLowerCase();
+    const storedAnsLower = (matchedUser.securityAnswer || '').trim().toLowerCase();
+    
+    if (!ansLower) {
+      setSecurityAnswerError('Please type your security answer.');
+      return;
+    }
+    
+    if (ansLower !== storedAnsLower) {
+      setSecurityAnswerError('Incorrect answer. Please check spelling or capitalization.');
+      return;
+    }
+    
+    // Correct! Create a security question bypass reset token
+    const token = 'rst-sec-' + Math.random().toString(36).slice(2, 11) + '-' + Math.random().toString(36).slice(2, 11);
+    const savedTokens = JSON.parse(localStorage.getItem('attendance_reset_tokens') || '{}');
+    savedTokens[token] = {
+      email: matchedUser.email.toLowerCase().trim(),
+      expiresAt: Date.now() + 600000 // 10 Minutes
+    };
+    localStorage.setItem('attendance_reset_tokens', JSON.stringify(savedTokens));
+    
+    // Switch to apply new password directly with prefilled token!
+    setResetTokenInput(token);
+    setSecurityAnswerInput('');
+    setSecurityAnswerError('');
+    setMatchedUser(null);
+    setForgotSuccess(false);
+    setMode('reset_password');
   };
 
   // Handle Forgot Password link generator
@@ -386,7 +535,9 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
           fullName: 'Professor Smith',
           email: 'guest@classroom.com',
           passwordHash: guestHash,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          securityQuestion: "What is your favorite school subject?",
+          securityAnswer: "mathematics"
         }
       ];
       setUsers(initialUsers);
@@ -510,6 +661,41 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </form>
+
+                {/* Secure Google Identity Provider */}
+                <div id="google-sso-container" className="space-y-4">
+                  <div className="relative flex py-2 items-center">
+                    <div className="flex-grow border-t border-slate-150"></div>
+                    <span className="flex-shrink mx-4 text-slate-400 text-[10px] font-black uppercase tracking-wider select-none">Or SSO Authentication</span>
+                    <div className="flex-grow border-t border-slate-150"></div>
+                  </div>
+
+                  {googleSignInError && (
+                    <div className="p-3 bg-red-50 border border-red-150 rounded-xl text-red-600 text-[11px] font-semibold flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                      <span>{googleSignInError}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={isGoogleSigningIn}
+                    onClick={handleGoogleSignIn}
+                    className="w-full py-2.5 bg-white border border-slate-205 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl cursor-pointer transition shadow-xs flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {isGoogleSigningIn ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-slate-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                        <span>Authenticating with Google...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Chrome className="w-4 h-4 text-indigo-650" />
+                        <span>Sign In with Google Account</span>
+                      </>
+                    )}
+                  </button>
+                </div>
 
                 <div className="border-t border-slate-100 pt-4 text-center">
                   <p className="text-xs font-bold text-slate-500">
@@ -682,6 +868,65 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
                     </div>
                   </div>
 
+                  {/* Security Question and Answer selection */}
+                  <div className="bg-indigo-50/50 hover:bg-indigo-50/75 p-3.5 rounded-2xl border border-indigo-100/50 space-y-3 transition">
+                    <span className="block text-[10px] font-black text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+                      <HelpCircle className="w-4.5 h-4.5 text-indigo-650 shrink-0" />
+                      Security Recovery Question
+                    </span>
+                    <p className="text-[10px] text-slate-500 leading-normal font-semibold">
+                      An alternative password recovery method if you lose access to emails. Keep the answer memorable but hard to guess!
+                    </p>
+
+                    <div className="space-y-1">
+                      <label htmlFor="reg-security-question" className="text-[9px] font-black text-slate-400 uppercase tracking-wide block">
+                        Select Security Question
+                      </label>
+                      <select
+                        id="reg-security-question"
+                        value={regSecurityQuestion}
+                        onChange={e => setRegSecurityQuestion(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-white border border-slate-205 border-slate-200 outline-none rounded-xl text-xs font-bold text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150/50 transition cursor-pointer"
+                      >
+                        {STANDARD_QUESTIONS.map((q, idx) => (
+                          <option key={idx} value={q}>{q}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {regSecurityQuestion === "Custom Security Question..." && (
+                      <div className="space-y-1 mt-1.5">
+                        <label htmlFor="reg-custom-question" className="text-[9px] font-black text-slate-400 uppercase tracking-wide block">
+                          Write custom Question
+                        </label>
+                        <input
+                          id="reg-custom-question"
+                          type="text"
+                          required
+                          value={regCustomQuestion}
+                          onChange={e => setRegCustomQuestion(e.target.value)}
+                          placeholder="e.g. What is your secret childhood nickname?"
+                          className="w-full px-3.5 py-2 bg-white border border-slate-200 outline-none rounded-xl text-xs font-bold text-slate-705 text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150/50 transition"
+                        />
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <label htmlFor="reg-security-answer" className="text-[9px] font-black text-slate-400 uppercase tracking-wide block">
+                        Security Answer
+                      </label>
+                      <input
+                        id="reg-security-answer"
+                        type="text"
+                        required
+                        value={regSecurityAnswer}
+                        onChange={e => setRegSecurityAnswer(e.target.value)}
+                        placeholder="Type secret recovery answer..."
+                        className="w-full px-3.5 py-2 bg-white border border-slate-205 border-slate-200 outline-none rounded-xl text-xs font-bold text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150/50 transition"
+                      />
+                    </div>
+                  </div>
+
                   <button
                     type="submit"
                     disabled={isHashing}
@@ -727,7 +972,7 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
               >
                 <div>
                   <h3 className="text-lg font-bold text-slate-800">Reset Password</h3>
-                  <p className="text-[11px] text-slate-400 font-medium font-display">Send a secure verification email to your registered inbox</p>
+                  <p className="text-[11px] text-slate-400 font-medium font-display">Recover your space instantly via security question or secure email</p>
                 </div>
 
                 {forgotError && (
@@ -737,7 +982,35 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
                   </div>
                 )}
 
-                {forgotSuccess ? (
+                {!matchedUser ? (
+                  <form onSubmit={handleCheckEmail} className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label htmlFor="forgot-email" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Registered Email Address
+                      </label>
+                      <div className="relative">
+                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                          id="forgot-email"
+                          type="email"
+                          required
+                          value={forgotEmail}
+                          onChange={e => setForgotEmail(e.target.value)}
+                          placeholder="e.g. guest@classroom.com"
+                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 transition font-bold text-slate-705 text-slate-700"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 text-white text-xs font-black rounded-xl cursor-pointer transition shadow-xl shadow-indigo-150 flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                    >
+                      <span>Find Account</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </form>
+                ) : forgotSuccess ? (
                   <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl text-emerald-800 space-y-3 mt-2 text-xs">
                     <div className="flex items-center gap-2">
                       <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
@@ -766,6 +1039,8 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
                       onClick={() => {
                         setForgotSuccess(false);
                         setResetTokenInput(generatedToken);
+                        setMatchedUser(null);
+                        setForgotEmail('');
                         setMode('reset_password');
                       }}
                       className="w-full bg-indigo-650 hover:bg-indigo-700 text-white font-black text-xs py-2 px-3 rounded-xl transition duration-150 text-center flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-indigo-100 active:scale-[0.98]"
@@ -775,44 +1050,113 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
                     </button>
                   </div>
                 ) : (
-                  <form onSubmit={handleForgotSubmit} className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label htmlFor="forgot-email" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Registered Email Address
-                      </label>
-                      <div className="relative">
-                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input
-                          id="forgot-email"
-                          type="email"
-                          required
-                          disabled={isSendingMail}
-                          value={forgotEmail}
-                          onChange={e => setForgotEmail(e.target.value)}
-                          placeholder="e.g. guest@classroom.com"
-                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 transition font-bold text-slate-700 disabled:opacity-60"
-                        />
+                  <div className="space-y-4">
+                    {/* Account Identification Tag */}
+                    <div className="bg-slate-50 border border-slate-150 p-3 rounded-2xl flex items-center justify-between">
+                      <div className="text-left max-w-[60%]">
+                        <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Account Found</span>
+                        <span className="text-xs font-bold text-indigo-950 truncate block mt-1">
+                          {matchedUser.fullName || 'Academic Officer'}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold truncate block font-sans">
+                          {matchedUser.email}
+                        </span>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMatchedUser(null);
+                          setForgotError('');
+                          setSecurityAnswerInput('');
+                          setSecurityAnswerError('');
+                        }}
+                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 bg-white hover:bg-slate-100 border border-slate-205 px-3 py-1.5 rounded-xl transition cursor-pointer"
+                      >
+                        Change Email
+                      </button>
                     </div>
 
-                    <button
-                      type="submit"
-                      disabled={isSendingMail}
-                      className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-black rounded-xl cursor-pointer transition shadow-xl shadow-indigo-150 flex items-center justify-center gap-1.5 active:scale-[0.98]"
-                    >
-                      {isSendingMail ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                          <span>Sending Verification Email...</span>
-                        </>
+                    {/* PATH A: Security Question Form */}
+                    <div className="bg-gradient-to-br from-indigo-50/50 to-indigo-100/20 p-4 rounded-2xl border border-indigo-100/50 space-y-3">
+                      <div className="flex items-center gap-1.5">
+                        <HelpCircle className="w-4.5 h-4.5 text-indigo-650 shrink-0" />
+                        <h4 className="text-xs font-black text-indigo-950">Option 1: Security Question</h4>
+                      </div>
+                      
+                      {matchedUser.securityQuestion ? (
+                        <form onSubmit={handleSecurityAnswerVerify} className="space-y-3">
+                          <div className="bg-white p-3 rounded-xl border border-indigo-50/70 text-[11px] font-bold text-slate-700 shadow-3xs">
+                            <span className="block text-[8px] font-black text-indigo-500 uppercase tracking-widest mb-1">Your Question:</span>
+                            {matchedUser.securityQuestion}
+                          </div>
+
+                          {securityAnswerError && (
+                            <p className="text-[10px] text-rose-600 font-bold flex items-center gap-1 bg-rose-50 p-2 rounded-lg border border-rose-100">
+                              <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-500" />
+                              {securityAnswerError}
+                            </p>
+                          )}
+
+                          <div className="space-y-1">
+                            <label htmlFor="recovery-security-answer" className="text-[9px] font-black text-slate-400 uppercase tracking-wide block">
+                              Your Secret Answer
+                            </label>
+                            <input
+                              id="recovery-security-answer"
+                              type="text"
+                              required
+                              value={securityAnswerInput}
+                              onChange={e => setSecurityAnswerInput(e.target.value)}
+                              placeholder="Answer (ignores casing/spaces)"
+                              className="w-full px-3.5 py-2 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150/50 outline-none rounded-xl text-xs font-bold text-slate-700 transition font-sans"
+                            />
+                          </div>
+
+                          <button
+                            type="submit"
+                            className="w-full py-2 bg-indigo-650 hover:bg-indigo-700 text-white text-xs font-black rounded-xl cursor-pointer transition shadow-sm active:scale-[0.99] flex items-center justify-center gap-1"
+                          >
+                            <Key className="w-3.5 h-3.5" />
+                            <span>Verify & Reset Password Instantly</span>
+                          </button>
+                        </form>
                       ) : (
-                        <>
-                          <span>Send Verification Email</span>
-                          <ArrowRight className="w-4 h-4" />
-                        </>
+                        <div className="p-3 bg-slate-100/50 rounded-xl border text-[10px] text-slate-500 font-medium">
+                          No security question is configured for this account. Please use standard email recovery below.
+                        </div>
                       )}
-                    </button>
-                  </form>
+                    </div>
+
+                    {/* PATH B: Standard Email verification */}
+                    <div className="bg-slate-50/50 hover:bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-2.5 transition">
+                      <div className="flex items-center gap-1.5">
+                        <Mail className="w-4 h-4 text-slate-500 shrink-0" />
+                        <h4 className="text-xs font-bold text-slate-800">Option 2: Email Reset Link</h4>
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Receive a secure password reset token to your registered email inbox.
+                      </p>
+                      
+                      <button
+                        type="button"
+                        onClick={handleForgotSubmit}
+                        disabled={isSendingMail}
+                        className="w-full py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl cursor-pointer transition flex items-center justify-center gap-1"
+                      >
+                        {isSendingMail ? (
+                          <>
+                            <div className="w-3.5 h-3.5 border-2 border-slate-300 border-t-indigo-650 rounded-full animate-spin"></div>
+                            <span>Sending Email reset...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Inbox className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Send Verification Email</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 <div className="border-t border-slate-100 pt-3 text-center flex justify-between items-center text-xs">
@@ -821,6 +1165,9 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
                     onClick={() => {
                       setForgotError('');
                       setForgotSuccess(false);
+                      setMatchedUser(null);
+                      setSecurityAnswerInput('');
+                      setSecurityAnswerError('');
                       setMode('login');
                     }}
                     className="text-slate-400 hover:text-slate-650 font-bold"
@@ -829,7 +1176,9 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setMode('reset_password')}
+                    onClick={() => {
+                      setMode('reset_password');
+                    }}
                     className="text-indigo-600 hover:text-indigo-700 font-black"
                   >
                     Enter Token Directly

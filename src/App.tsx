@@ -34,6 +34,8 @@ import WeeklyGrid from './components/WeeklyGrid';
 import Auth, { UserAccount } from './components/Auth';
 import MonthlyBoard from './components/MonthlyBoard';
 import IntakeBoard from './components/IntakeBoard';
+import StudentCalendarView from './components/StudentCalendarView';
+import { logout as firebaseLogout } from './lib/firebaseAuth';
 
 // Types & Initial Data
 import { Student, Section, AttendanceMap, AttendanceStatus, AttendanceNotesMap, Program } from './types';
@@ -109,6 +111,9 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    // Also sign out from Google/Firebase Auth to let user choose a different Google account on sign-in
+    firebaseLogout().catch(err => console.error("Firebase logout error:", err));
+
     setCurrentUser(null);
     localStorage.removeItem('attendance_current_user');
     localStorage.removeItem('attendance_session_expires_at');
@@ -249,7 +254,7 @@ export default function App() {
     return saved || '';
   });
 
-  const [activeTab, setActiveTab] = useState<'attendance' | 'weekly_grid' | 'monthly_board' | 'intake_board' | 'students' | 'calculator'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'weekly_grid' | 'monthly_board' | 'intake_board' | 'students' | 'calculator' | 'student_calendar'>('attendance');
   const [selectedDate, setSelectedDate] = useState<string>('2026-05-31'); // Current local time is 2026-05-31
 
   // Program & Section CRUD states
@@ -1196,6 +1201,18 @@ export default function App() {
                   <span>Manage Students</span>
                 </button>
                 <button
+                  id="tab-student-calendar-btn"
+                  onClick={() => setActiveTab('student_calendar')}
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 cursor-pointer transition-all ${
+                    activeTab === 'student_calendar'
+                      ? 'bg-white text-slate-800 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4" />
+                  <span>Student Calendar</span>
+                </button>
+                <button
                   id="tab-calculator-btn"
                   onClick={() => setActiveTab('calculator')}
                   className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 cursor-pointer transition-all ${
@@ -1294,6 +1311,17 @@ export default function App() {
                   onAddIntake={handleAddIntake}
                   onRenameIntake={handleRenameIntake}
                   onDeleteIntake={handleDeleteIntake}
+                />
+              )}
+
+              {activeTab === 'student_calendar' && (
+                <StudentCalendarView
+                  activeSection={activeSection}
+                  students={students}
+                  attendance={attendance}
+                  attendanceNotes={attendanceNotes}
+                  holidays={holidays}
+                  onToggleHoliday={handleToggleHoliday}
                 />
               )}
 

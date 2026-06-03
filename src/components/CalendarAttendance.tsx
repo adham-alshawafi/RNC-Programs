@@ -68,6 +68,22 @@ export default function CalendarAttendance({
   const [viewMode, setViewMode] = useState<'roster' | 'student'>('roster');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
 
+  // Dynamic monthly metadata for student level persistence
+  const [studentLevels, setStudentLevels] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('attendance_student_levels');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const handleLevelChange = (studentId: string, level: string) => {
+    const updated = { ...studentLevels, [studentId]: level };
+    setStudentLevels(updated);
+    localStorage.setItem('attendance_student_levels', JSON.stringify(updated));
+  };
+
   // Note editing state variables
   const [editingNoteStudentId, setEditingNoteStudentId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
@@ -598,7 +614,7 @@ export default function CalendarAttendance({
             <div className="space-y-6">
               
               {/* Student Dropdown Selector Header */}
-              <div className="bg-slate-50/80 border border-slate-150 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-3xs">
+              <div className="bg-slate-50/80 border border-slate-150 p-4 rounded-xl flex flex-col xl:flex-row xl:items-center justify-between gap-4 shadow-3xs">
                 <div className="flex items-center gap-2">
                   <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
                     <Users className="w-4 h-4" />
@@ -606,21 +622,52 @@ export default function CalendarAttendance({
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block leading-3">Focused Student</label>
                     <span className="text-xs text-slate-600 font-bold block">Viewing dynamic monthly metrics</span>
+                    {selectedStudentId && studentLevels[selectedStudentId] && (
+                      <span className="inline-block mt-1 px-2 py-0.5 bg-indigo-600 text-white rounded text-[9px] font-black uppercase tracking-wider animate-pulse shadow-2xs">
+                        {studentLevels[selectedStudentId]} Level
+                      </span>
+                    )}
                   </div>
                 </div>
                 
-                <select
-                  value={selectedStudentId}
-                  onChange={e => setSelectedStudentId(e.target.value)}
-                  className="w-full sm:w-64 px-3.5 py-2 bg-white border border-slate-205 rounded-xl text-xs font-black text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-150 cursor-pointer shadow-3xs hover:border-slate-350 transition"
-                >
-                  <option value="" disabled>-- Select a Student --</option>
-                  {sectionStudents.map(student => (
-                    <option key={student.id} value={student.id}>
-                      {student.name} {student.intake ? `(${student.intake})` : ''}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full xl:w-auto">
+                  {/* Class Level Dropdown */}
+                  <div className="flex flex-col gap-0.5 w-full sm:w-44">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block leading-3">Class Level</span>
+                    <select
+                      value={selectedStudentId ? (studentLevels[selectedStudentId] || 'Beginner') : 'Beginner'}
+                      disabled={!selectedStudentId}
+                      onChange={e => selectedStudentId && handleLevelChange(selectedStudentId, e.target.value)}
+                      className="w-full px-3 py-1.5 bg-white border border-slate-205 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-150 cursor-pointer shadow-3xs hover:border-slate-350 transition disabled:opacity-50"
+                    >
+                      <option value="Beginner">Beginner</option>
+                      <option value="Pre-starter">Pre-starter</option>
+                      <option value="Starter">Starter</option>
+                      <option value="Elementary">Elementary</option>
+                      <option value="Pre-Intermediate">Pre-Intermediate</option>
+                      <option value="Intermediate">Intermediate</option>
+                      <option value="Upper-Intermediate">Upper-Intermediate</option>
+                      <option value="Advanced">Advanced</option>
+                    </select>
+                  </div>
+
+                  {/* Student Select Dropdown */}
+                  <div className="flex flex-col gap-0.5 w-full sm:w-56">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block leading-3">Select Student</span>
+                    <select
+                      value={selectedStudentId}
+                      onChange={e => setSelectedStudentId(e.target.value)}
+                      className="w-full px-3 py-1.5 bg-white border border-slate-205 rounded-xl text-xs font-black text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-150 cursor-pointer shadow-3xs hover:border-slate-350 transition"
+                    >
+                      <option value="" disabled>-- Select a Student --</option>
+                      {sectionStudents.map(student => (
+                        <option key={student.id} value={student.id}>
+                          {student.name} {student.intake ? `(${student.intake})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
 
               {selectedStudentId ? (

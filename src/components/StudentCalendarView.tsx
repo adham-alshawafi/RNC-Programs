@@ -187,10 +187,11 @@ export default function StudentCalendarView({
 
   // Get lists of all precise attendance records for this student during the month
   const monthlyLogs = useMemo(() => {
-    if (!selectedStudentId) return { presentsList: [], absentsList: [] };
+    if (!selectedStudentId) return { presentsList: [], absentsList: [], withdrawnsList: [] };
 
     const presentsList: { dateString: string; friendlyDate: string; note?: string }[] = [];
     const absentsList: { dateString: string; friendlyDate: string; note?: string }[] = [];
+    const withdrawnsList: { dateString: string; friendlyDate: string; note?: string }[] = [];
 
     // Filter current month cells sorted by date ascending
     const currentMonthCells = calendarCells
@@ -216,13 +217,15 @@ export default function StudentCalendarView({
         presentsList.push({ dateString: cell.dateString, friendlyDate, note });
       } else if (status === 'absent') {
         absentsList.push({ dateString: cell.dateString, friendlyDate, note });
+      } else if (status === 'withdrawn') {
+        withdrawnsList.push({ dateString: cell.dateString, friendlyDate, note });
       }
     });
 
-    return { presentsList, absentsList };
+    return { presentsList, absentsList, withdrawnsList };
   }, [selectedStudentId, calendarCells, attendance, attendanceNotes, activeSectionHolidays]);
 
-  const [activeLogTab, setActiveLogTab] = useState<'absent' | 'present'>('absent');
+  const [activeLogTab, setActiveLogTab] = useState<'absent' | 'present' | 'withdrawn'>('absent');
 
   return (
     <div id="student-calendar-view-root" className="space-y-6">
@@ -482,6 +485,9 @@ export default function StudentCalendarView({
                     } else if (status === 'absent') {
                       blockClass = 'bg-rose-50/90 border-rose-200 text-rose-800';
                       statusLabel = 'absent';
+                    } else if (status === 'withdrawn') {
+                      blockClass = 'bg-amber-50/90 border-amber-200/80 text-amber-800';
+                      statusLabel = 'withdrawn';
                     }
 
                     // Highlight today
@@ -519,6 +525,8 @@ export default function StudentCalendarView({
                                 <span className="w-4 h-4 bg-emerald-500 text-white rounded-full flex items-center justify-center text-[8px] font-bold shadow-2xs">P</span>
                               ) : status === 'absent' ? (
                                 <span className="w-4 h-4 bg-rose-500 text-white rounded-full flex items-center justify-center text-[8px] font-bold shadow-2xs">A</span>
+                              ) : status === 'withdrawn' ? (
+                                <span className="w-4 h-4 bg-amber-500 text-white rounded-full flex items-center justify-center text-[8px] font-bold shadow-2xs">W</span>
                               ) : (
                                 <span className="w-3.5 h-1 bg-slate-200 rounded-full inline-block" />
                               )}
@@ -545,6 +553,10 @@ export default function StudentCalendarView({
                     <div className="flex items-center gap-1.5">
                       <span className="w-3 h-3 bg-rose-500 rounded text-center text-white text-[7px] font-bold flex items-center justify-center shadow-3xs">A</span>
                       <span>Absent</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 bg-amber-500 rounded text-center text-white text-[7px] font-bold flex items-center justify-center shadow-3xs">W</span>
+                      <span>Withdrawn</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Coffee className="w-3.5 h-3.5 text-amber-500" />
@@ -598,6 +610,18 @@ export default function StudentCalendarView({
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                       <span>Presences ({monthlyLogs.presentsList.length})</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveLogTab('withdrawn')}
+                      className={`px-3 py-1.5 rounded-md flex items-center gap-1 transition-all cursor-pointer ${
+                        activeLogTab === 'withdrawn' 
+                          ? 'bg-white text-amber-700 shadow-3xs' 
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      <span>Withdrawn ({monthlyLogs.withdrawnsList.length})</span>
+                    </button>
                   </div>
                 </div>
 
@@ -646,7 +670,7 @@ export default function StudentCalendarView({
                           </div>
                         )}
                       </motion.div>
-                    ) : (
+                    ) : activeLogTab === 'present' ? (
                       <motion.div
                         key="present-panel"
                         initial={{ opacity: 0, y: 5 }}
@@ -682,6 +706,48 @@ export default function StudentCalendarView({
                                 <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest bg-emerald-100/30 border border-emerald-200/40 px-2 py-0.5 rounded-lg select-none flex items-center gap-1 shadow-3xs">
                                   <Check className="w-3 h-3 text-emerald-500" />
                                   <span>Present</span>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="withdrawn-panel"
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -5 }}
+                        transition={{ duration: 0.15 }}
+                        className="space-y-2"
+                      >
+                        {monthlyLogs.withdrawnsList.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center text-center py-8 text-slate-400 space-y-2">
+                            <Clock className="w-10 h-10 text-slate-300" />
+                            <h5 className="text-xs font-bold text-slate-700">No Withdrawn Log Entries</h5>
+                            <p className="text-[10px] text-slate-450 normal-case font-medium">The student is not recorded as withdrawn on any specific days in {MONTHS[currentMonth]}.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                            {monthlyLogs.withdrawnsList.map((log, index) => (
+                              <div 
+                                key={index}
+                                className="flex items-center justify-between p-3 bg-amber-50/30 hover:bg-amber-50/50 border border-amber-100/40 rounded-xl transition gap-3"
+                              >
+                                <div className="text-left">
+                                  <span className="block text-xs font-black text-amber-950 font-mono">
+                                    {log.friendlyDate}, {currentYear}
+                                  </span>
+                                  {log.note && (
+                                    <span className="block text-[11px] text-slate-500 font-medium italic mt-0.5 flex items-center gap-1">
+                                      <FileText className="w-3.5 h-3.5 text-slate-400 inline" />
+                                      {log.note}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest bg-amber-100/30 border border-amber-200/40 px-2 py-0.5 rounded-lg select-none flex items-center gap-1 shadow-3xs">
+                                  <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                  <span>Withdrawn</span>
                                 </span>
                               </div>
                             ))}

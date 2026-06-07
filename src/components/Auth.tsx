@@ -318,6 +318,8 @@ export default function Auth({ onLoginSuccess, users, setUsers }: AuthProps) {
       console.error('Google Sign-In Error:', err);
       if (err.code === 'auth/popup-closed-by-user') {
         setGoogleSignInError('The secure Google sign-in window was closed.');
+      } else if (err.code === 'auth/account-exists-with-different-credential' || err.code === 'auth/email-already-in-use') {
+        setGoogleSignInError('An account with this email address already holds different sign-in credentials (e.g. Email & Password). Please sign in using your standard password or contact your administrator to link them.');
       } else {
         setGoogleSignInError(err.message || 'Failed to sign in with Google.');
       }

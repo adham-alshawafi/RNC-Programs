@@ -7,6 +7,7 @@ export interface Student {
   name: string;
   sectionId: string;
   intake?: string; // e.g. "Jan 2026", "June 2026"
+  isWithdrawn?: boolean;
 }
 
 export interface Program {
@@ -22,7 +23,7 @@ export interface Section {
   isCustom?: boolean; // true if created by user, false for initial ones
 }
 
-export type AttendanceStatus = 'present' | 'absent';
+export type AttendanceStatus = 'present' | 'absent' | 'withdrawn';
 
 // Key format: YYYY-MM-DD
 export type DateKey = string;

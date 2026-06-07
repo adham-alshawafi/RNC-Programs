@@ -198,6 +198,8 @@ export default function WeeklyGrid({
       onUpdateAttendance(dateStr, studentId, 'present');
     } else if (currentStatus === 'present') {
       onUpdateAttendance(dateStr, studentId, 'absent');
+    } else if (currentStatus === 'absent') {
+      onUpdateAttendance(dateStr, studentId, 'withdrawn');
     } else {
       onClearAttendance(dateStr, [studentId]);
     }
@@ -571,13 +573,20 @@ export default function WeeklyGrid({
                   const accuracyValue = statsObj?.percentage;
 
                   return (
-                    <tr key={student.id} className="hover:bg-slate-50/40 transition">
+                    <tr key={student.id} className={`hover:bg-slate-50/40 transition ${student.isWithdrawn ? 'opacity-85' : ''}`}>
                       {/* Name of single Student */}
                       <td className="sticky left-0 bg-white z-10 pl-6 pr-4 py-3.5 font-bold text-slate-700 truncate border-r border-slate-100/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.03)] group-hover:bg-slate-50">
                         <div className="space-y-1">
-                          <p className="font-semibold text-slate-800 text-xs truncate max-w-[150px]" title={student.name}>
-                            {student.name}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className={`font-semibold text-xs truncate max-w-[140px] ${student.isWithdrawn ? 'text-slate-400 line-through decoration-rose-300' : 'text-slate-800'}`} title={student.name}>
+                              {student.name}
+                            </p>
+                            {student.isWithdrawn && (
+                              <span className="px-1.5 py-0.5 bg-rose-50 border border-rose-100 text-rose-700 rounded text-[8px] font-black uppercase tracking-wider shrink-0 select-none">
+                                Withdrawn
+                              </span>
+                            )}
+                          </div>
                           <div className="flex gap-2 items-center flex-wrap">
                             <button
                               type="button"
@@ -622,7 +631,11 @@ export default function WeeklyGrid({
                         } else if (status === 'absent') {
                           colorClass = 'bg-rose-500 border-rose-400 text-white shadow-xs';
                           dotContent = <X className="w-[18px] h-[18px] text-white stroke-[4.5px]" />;
-                          cellTitle = 'Recorded: Absent\nClick to clear / remove record';
+                          cellTitle = 'Recorded: Absent\nClick to change to Withdrawn';
+                        } else if (status === 'withdrawn') {
+                          colorClass = 'bg-amber-500 border-amber-400 text-white shadow-xs';
+                          dotContent = <AlertCircle className="w-[18px] h-[18px] text-white stroke-[4.5px]" />;
+                          cellTitle = 'Recorded: Withdrawn\nClick to clear / remove record';
                         }
  
                         return (

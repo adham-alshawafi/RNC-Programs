@@ -761,7 +761,7 @@ export default function CalendarAttendance({
                           <button
                             type="button"
                             onClick={() => onUpdateAttendance(selectedDate, selectedStudentId, 'present')}
-                            className={`flex-1 py-1 px-2.5 rounded-md text-xxs font-extrabold flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                            className={`flex-1 py-1 px-2 rounded-md text-xxs font-extrabold flex items-center justify-center gap-1 cursor-pointer transition-all ${
                               attendance[selectedDate]?.[selectedStudentId] === 'present'
                                 ? 'bg-emerald-600 text-white shadow-xs'
                                 : 'text-slate-500 hover:text-slate-800'
@@ -773,7 +773,7 @@ export default function CalendarAttendance({
                           <button
                             type="button"
                             onClick={() => onUpdateAttendance(selectedDate, selectedStudentId, 'absent')}
-                            className={`flex-1 py-1 px-2.5 rounded-md text-xxs font-extrabold flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                            className={`flex-1 py-1 px-2 rounded-md text-xxs font-extrabold flex items-center justify-center gap-1 cursor-pointer transition-all ${
                               attendance[selectedDate]?.[selectedStudentId] === 'absent'
                                 ? 'bg-rose-500 text-white shadow-xs'
                                 : 'text-slate-500 hover:text-slate-800'
@@ -781,6 +781,18 @@ export default function CalendarAttendance({
                           >
                             <X className="w-3.5 h-3.5" />
                             <span>Absent</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onUpdateAttendance(selectedDate, selectedStudentId, 'withdrawn')}
+                            className={`flex-1 py-1 px-2 rounded-md text-xxs font-extrabold flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                              attendance[selectedDate]?.[selectedStudentId] === 'withdrawn'
+                                ? 'bg-amber-600 text-white shadow-xs'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            <span>Withdrawn</span>
                           </button>
                         </div>
                       </div>
@@ -1064,7 +1076,14 @@ export default function CalendarAttendance({
                           <div className="px-4 py-3 flex items-center justify-between gap-4 hover:bg-slate-50/30 transition-all">
                             {/* Name & Note indicator with tooltip decoration */}
                             <div className="flex items-center gap-2 min-w-0 flex-1">
-                              <span className="text-xs font-semibold text-slate-705 truncate max-w-[150px] sm:max-w-xs">{student.name}</span>
+                              <span className={`text-xs font-semibold truncate max-w-[150px] sm:max-w-xs ${student.isWithdrawn ? 'text-slate-400 line-through decoration-rose-300' : 'text-slate-750'}`}>
+                                {student.name}
+                              </span>
+                              {student.isWithdrawn && (
+                                <span className="px-2 py-0.5 bg-rose-50 border border-rose-150 text-rose-700 rounded-md text-[9px] font-black uppercase tracking-wider select-none shrink-0">
+                                  Withdrawn
+                                </span>
+                              )}
                               {studentNote && (
                                 <span
                                   title={`Attendance note: ${studentNote}`}
@@ -1103,26 +1122,39 @@ export default function CalendarAttendance({
                                 <button
                                   type="button"
                                   onClick={() => onUpdateAttendance(selectedDate, student.id, 'present')}
-                                  className={`px-3 py-1 rounded-md text-xxs font-extrabold flex items-center gap-1 cursor-pointer transition-all ${
+                                  className={`px-2.5 py-1 rounded-md text-xxs font-extrabold flex items-center gap-1 cursor-pointer transition-all ${
                                     currentStatus === 'present'
-                                      ? 'bg-emerald-600 text-white shadow-xs'
-                                      : 'text-slate-500 hover:text-slate-800'
+                                      ? 'bg-emerald-605 text-white bg-emerald-605 shadow-xs bg-emerald-600'
+                                      : 'text-slate-505 text-slate-500 hover:text-slate-805 hover:text-slate-800'
                                   }`}
                                 >
-                                  <Check className="w-3.5 h-3.5 shrink-0" />
+                                  <Check className="w-3 h-3 shrink-0" />
                                   <span className="hidden sm:inline">Present</span>
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => onUpdateAttendance(selectedDate, student.id, 'absent')}
-                                  className={`px-3 py-1 rounded-md text-xxs font-extrabold flex items-center gap-1 cursor-pointer transition-all ${
+                                  className={`px-2.5 py-1 rounded-md text-xxs font-extrabold flex items-center gap-1 cursor-pointer transition-all ${
                                     currentStatus === 'absent'
-                                      ? 'bg-rose-500 text-white shadow-xs'
-                                      : 'text-slate-500 hover:text-slate-800'
+                                      ? 'bg-rose-505 text-white bg-rose-505 shadow-xs bg-rose-500'
+                                      : 'text-slate-505 text-slate-500 hover:text-slate-805 hover:text-slate-800'
                                   }`}
                                 >
-                                  <X className="w-3.5 h-3.5 shrink-0" />
+                                  <X className="w-3 h-3 shrink-0" />
                                   <span className="hidden sm:inline">Absent</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => onUpdateAttendance(selectedDate, student.id, 'withdrawn')}
+                                  className={`px-2.5 py-1 rounded-md text-xxs font-extrabold flex items-center gap-1 cursor-pointer transition-all ${
+                                    currentStatus === 'withdrawn'
+                                      ? 'bg-amber-505 text-white bg-amber-505 shadow-xs bg-amber-600'
+                                      : 'text-slate-505 text-slate-500 hover:text-slate-805 hover:text-slate-800'
+                                  }`}
+                                  title="Mark student as Withdrawn on this date"
+                                >
+                                  <AlertCircle className="w-3 h-3 shrink-0" />
+                                  <span className="hidden sm:inline">Withdrawn</span>
                                 </button>
                               </div>
                             </div>

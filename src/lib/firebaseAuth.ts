@@ -8,6 +8,8 @@ export const auth: Auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 // Request the Sheets scope
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+// Force Google to show the account chooser prompt so users can easily switch between different Google accounts
+provider.setCustomParameters({ prompt: 'select_account' });
 
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;

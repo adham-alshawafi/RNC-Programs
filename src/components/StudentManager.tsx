@@ -9,7 +9,7 @@ interface StudentManagerProps {
   attendance: AttendanceMap;
   selectedDate: string;
   onAddStudent: (name: string, sectionId: string, intake?: string) => void;
-  onEditStudent: (id: string, newName: string, newIntake?: string) => void;
+  onEditStudent: (id: string, newName: string, newIntake?: string, isWithdrawn?: boolean) => void;
   onDeleteStudent: (id: string) => void;
   onAddStudentsBatch?: (newStudents: { name: string; intake?: string }[]) => void;
   customIntakes: string[];
@@ -38,6 +38,7 @@ export default function StudentManager({
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [editingIntake, setEditingIntake] = useState('');
+  const [editingIsWithdrawn, setEditingIsWithdrawn] = useState(false);
   const [deleteConfId, setDeleteConfId] = useState<string | null>(null);
 
   // Intake Manager States
@@ -268,21 +269,24 @@ export default function StudentManager({
     setEditingStudentId(student.id);
     setEditingName(student.name);
     setEditingIntake(student.intake || 'Default Intake');
+    setEditingIsWithdrawn(!!student.isWithdrawn);
     setDeleteConfId(null); // Cancel any delete prompts
   };
 
   const handleSaveEdit = (id: string) => {
     const cleanName = editingName.trim();
     if (!cleanName) return;
-    onEditStudent(id, cleanName, editingIntake.trim() || undefined);
+    onEditStudent(id, cleanName, editingIntake.trim() || undefined, editingIsWithdrawn);
     setEditingStudentId(null);
     setEditingName('');
     setEditingIntake('');
+    setEditingIsWithdrawn(false);
   };
 
   const handleCancelEdit = () => {
     setEditingStudentId(null);
     setEditingName('');
+    setEditingIsWithdrawn(false);
   };
 
   const handleDeleteRequest = (id: string) => {
@@ -887,6 +891,15 @@ export default function StudentManager({
                               placeholder="Intake (Cohort)"
                               list="existing-intakes-list"
                             />
+                            <label className="flex items-center gap-2 bg-rose-50 border border-rose-100 px-3 py-1 rounded-xl cursor-pointer select-none self-start sm:self-center">
+                              <input
+                                type="checkbox"
+                                checked={editingIsWithdrawn}
+                                onChange={e => setEditingIsWithdrawn(e.target.checked)}
+                                className="w-3.5 h-3.5 text-rose-600 rounded border-rose-300 focus:ring-rose-100 cursor-pointer accent-rose-600"
+                              />
+                              <span className="text-[10px] font-black text-rose-700 uppercase tracking-wider">Withdrawn</span>
+                            </label>
                           </div>
                         ) : (
                           <div className="flex items-center gap-3">
@@ -918,10 +931,17 @@ export default function StudentManager({
                               );
                             })()}
                             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3.5">
-                              {renderHighlightedName(student.name, searchTerm)}
+                              <div className={student.isWithdrawn ? 'text-slate-400 line-through decoration-rose-300' : ''}>
+                                {renderHighlightedName(student.name, searchTerm)}
+                              </div>
                               <span className="inline-flex px-2 py-0.5 rounded bg-indigo-50 border border-indigo-120 hover:bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase tracking-wider self-start sm:self-auto transition-colors">
                                 {student.intake || 'Default Intake'}
                               </span>
+                              {student.isWithdrawn && (
+                                <span className="inline-flex px-2 py-0.5 rounded bg-rose-50 border border-rose-150 text-rose-700 text-[10px] font-black uppercase tracking-wider self-start sm:self-auto select-none">
+                                  Withdrawn
+                                </span>
+                              )}
                             </div>
                           </div>
                         )}

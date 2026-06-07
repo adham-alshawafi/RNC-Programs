@@ -252,6 +252,7 @@ export default function AttendanceCalculator({
   const studentCalculations = sectionStudents.map(student => {
     let presentCount = 0;
     let absentCount = 0;
+    let withdrawnCount = 0;
 
     let weekPresent = 0;
     let weekTotal = 0;
@@ -262,12 +263,16 @@ export default function AttendanceCalculator({
     filteredSubmittedDates.forEach(date => {
       const records = attendance[date] || {};
       const status = records[student.id];
+      
+      if (status === 'withdrawn' || (student.isWithdrawn && !status)) {
+        withdrawnCount++;
+        return;
+      }
+
       const isPresent = status === 'present';
       
       if (isPresent) {
         presentCount++;
-      } else if (status === 'absent') {
-        absentCount++;
       } else {
         absentCount++;
       }
@@ -285,8 +290,10 @@ export default function AttendanceCalculator({
       }
     });
 
-    const attendancePercentage = totalTrackedDays > 0 
-      ? Math.round((presentCount / totalTrackedDays) * 100) 
+    const studentTrackedDays = filteredSubmittedDates.length - withdrawnCount;
+
+    const attendancePercentage = studentTrackedDays > 0 
+      ? Math.round((presentCount / studentTrackedDays) * 100) 
       : 100;
 
     const weekPercentage = weekTotal > 0
@@ -380,10 +387,9 @@ export default function AttendanceCalculator({
       return true;
     });
 
-    const studentTrackedDays = studentFilteredDates.length;
-
     let presentCount = 0;
     let absentCount = 0;
+    let withdrawnCount = 0;
 
     let weekPresent = 0;
     let weekTotal = 0;
@@ -394,12 +400,16 @@ export default function AttendanceCalculator({
     studentFilteredDates.forEach(date => {
       const records = attendance[date] || {};
       const status = records[student.id];
+      
+      if (status === 'withdrawn' || (student.isWithdrawn && !status)) {
+        withdrawnCount++;
+        return;
+      }
+
       const isPresent = status === 'present';
       
       if (isPresent) {
         presentCount++;
-      } else if (status === 'absent') {
-        absentCount++;
       } else {
         absentCount++;
       }
@@ -414,6 +424,8 @@ export default function AttendanceCalculator({
         if (isPresent) monthPresent++;
       }
     });
+
+    const studentTrackedDays = studentFilteredDates.length - withdrawnCount;
 
     const attendancePercentage = studentTrackedDays > 0 
       ? Math.round((presentCount / studentTrackedDays) * 100) 

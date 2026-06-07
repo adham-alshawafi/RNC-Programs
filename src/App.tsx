@@ -548,8 +548,8 @@ export default function App() {
     });
   };
 
-  const handleEditStudent = (id: string, newName: string, newIntake?: string) => {
-    setStudents(prev => prev.map(s => s.id === id ? { ...s, name: newName, intake: newIntake?.trim() || 'Default Intake' } : s));
+  const handleEditStudent = (id: string, newName: string, newIntake?: string, isWithdrawn?: boolean) => {
+    setStudents(prev => prev.map(s => s.id === id ? { ...s, name: newName, intake: newIntake?.trim() || 'Default Intake', isWithdrawn: isWithdrawn !== undefined ? isWithdrawn : s.isWithdrawn } : s));
   };
 
   const handleDeleteStudent = (id: string) => {

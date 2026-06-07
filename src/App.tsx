@@ -22,7 +22,10 @@ import {
   LogOut,
   UserX,
   FileSpreadsheet,
-  Layers
+  Layers,
+  Terminal,
+  Keyboard,
+  Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -35,6 +38,7 @@ import Auth, { UserAccount } from './components/Auth';
 import MonthlyBoard from './components/MonthlyBoard';
 import IntakeBoard from './components/IntakeBoard';
 import StudentCalendarView from './components/StudentCalendarView';
+import CommandPalette from './components/CommandPalette';
 import { logout as firebaseLogout } from './lib/firebaseAuth';
 
 // Types & Initial Data
@@ -256,6 +260,37 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<'attendance' | 'weekly_grid' | 'monthly_board' | 'intake_board' | 'students' | 'calculator' | 'student_calendar'>('attendance');
   const [selectedDate, setSelectedDate] = useState<string>('2026-05-31'); // Current local time is 2026-05-31
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+
+  // Global Ctrl+K / Cmd+K Command Palette Trigger
+  useEffect(() => {
+    const handleGlobalKeys = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowCommandPalette(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeys);
+    return () => window.removeEventListener('keydown', handleGlobalKeys);
+  }, []);
+
+  const handleMarkAllPresentToday = () => {
+    if (!activeSectionId) return;
+    const activeSectionStudents = students.filter(s => s.sectionId === activeSectionId);
+    handleBulkUpdateAttendance(selectedDate, activeSectionStudents.map(s => s.id), 'present');
+  };
+
+  const handleMarkAllAbsentToday = () => {
+    if (!activeSectionId) return;
+    const activeSectionStudents = students.filter(s => s.sectionId === activeSectionId);
+    handleBulkUpdateAttendance(selectedDate, activeSectionStudents.map(s => s.id), 'absent');
+  };
+
+  const handleClearAttendanceToday = () => {
+    if (!activeSectionId) return;
+    const activeSectionStudents = students.filter(s => s.sectionId === activeSectionId);
+    handleClearAttendance(selectedDate, activeSectionStudents.map(s => s.id));
+  };
 
   // Program & Section CRUD states
   const [showAddProgramModal, setShowAddProgramModal] = useState(false);
@@ -1227,8 +1262,18 @@ export default function App() {
               </div>
 
               {/* Status Indicator */}
-              <div className="text-xs text-slate-400 font-medium">
-                Active group: <strong className="text-indigo-600">{activeSection.name}</strong>
+              <div className="flex items-center gap-3 text-xs text-slate-400 font-medium">
+                <span>Active group: <strong className="text-indigo-600">{activeSection.name}</strong></span>
+                <span className="text-slate-205">|</span>
+                <button
+                  type="button"
+                  onClick={() => setShowCommandPalette(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100/40 hover:border-indigo-200/60 rounded-lg text-[10px] font-black text-indigo-700 transition cursor-pointer select-none shadow-3xs"
+                  title="Alternative shortcut: Press Ctrl+K anywhere to activate"
+                >
+                  <Keyboard className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Ctrl+K Command Menu</span>
+                </button>
               </div>
             </div>
           )}
@@ -1546,6 +1591,23 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* COMMAND PALETTE OVERLAY */}
+      <CommandPalette
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        sections={sections}
+        activeSectionId={activeSectionId}
+        onSelectSection={setActiveSectionId}
+        students={students}
+        currentTab={activeTab}
+        onSelectTab={setActiveTab}
+        selectedDate={selectedDate}
+        onSelectDate={setSelectedDate}
+        onMarkAllPresent={handleMarkAllPresentToday}
+        onMarkAllAbsent={handleMarkAllAbsentToday}
+        onClearAttendance={handleClearAttendanceToday}
+      />
 
       {/* ADD PROGRAM MODAL */}
       <AnimatePresence>

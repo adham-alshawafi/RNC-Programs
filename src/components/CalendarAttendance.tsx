@@ -67,6 +67,7 @@ export default function CalendarAttendance({
   // View modes: 'roster' (standard date check) or 'student' (individual student calendar overview)
   const [viewMode, setViewMode] = useState<'roster' | 'student'>('roster');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [focusedStudentId, setFocusedStudentId] = useState<string>('');
 
   // Dynamic monthly metadata for student level persistence
   const [studentLevels, setStudentLevels] = useState<Record<string, string>>(() => {
@@ -119,6 +120,112 @@ export default function CalendarAttendance({
       setSelectedStudentId('');
     }
   }, [sectionStudents, selectedStudentId]);
+
+  // Safeguard: Ensure focusedStudentId matches active list for daily roster shortcuts
+  useEffect(() => {
+    if (sectionStudents.length > 0) {
+      const exists = sectionStudents.some(s => s.id === focusedStudentId);
+      if (!exists) {
+        setFocusedStudentId(sectionStudents[0].id);
+      }
+    } else {
+      setFocusedStudentId('');
+    }
+  }, [sectionStudents, focusedStudentId]);
+
+  // Keyboard Shortcuts Listener for rapid Roster roll call marking 
+  useEffect(() => {
+    if (viewMode !== 'roster' || sectionStudents.length === 0) return;
+
+    const handleRosterShortcuts = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      if (
+        activeEl?.tagName === 'INPUT' || 
+        activeEl?.tagName === 'TEXTAREA' || 
+        activeEl?.tagName === 'SELECT' ||
+        activeEl?.getAttribute('contenteditable') === 'true'
+      ) {
+        return;
+      }
+
+      const currentIndex = sectionStudents.findIndex(s => s.id === focusedStudentId);
+      if (currentIndex === -1 && sectionStudents.length > 0) {
+        setFocusedStudentId(sectionStudents[0].id);
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+
+      // Index reference boundary management
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const nextIndex = (currentIndex + 1) % sectionStudents.length;
+        setFocusedStudentId(sectionStudents[nextIndex].id);
+        const rowEl = document.getElementById(`student-row-${sectionStudents[nextIndex].id}`);
+        rowEl?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      } 
+      else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prevIndex = (currentIndex - 1 + sectionStudents.length) % sectionStudents.length;
+        setFocusedStudentId(sectionStudents[prevIndex].id);
+        const rowEl = document.getElementById(`student-row-${sectionStudents[prevIndex].id}`);
+        rowEl?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      } 
+      else if (key === 'p') {
+        e.preventDefault();
+        const currentStudent = sectionStudents[currentIndex];
+        if (currentStudent) {
+          onUpdateAttendance(selectedDate, currentStudent.id, 'present');
+          const nextIndex = (currentIndex + 1) % sectionStudents.length;
+          setFocusedStudentId(sectionStudents[nextIndex].id);
+          const rowEl = document.getElementById(`student-row-${sectionStudents[nextIndex].id}`);
+          rowEl?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+      else if (key === 'a') {
+        e.preventDefault();
+        const currentStudent = sectionStudents[currentIndex];
+        if (currentStudent) {
+          onUpdateAttendance(selectedDate, currentStudent.id, 'absent');
+          const nextIndex = (currentIndex + 1) % sectionStudents.length;
+          setFocusedStudentId(sectionStudents[nextIndex].id);
+          const rowEl = document.getElementById(`student-row-${sectionStudents[nextIndex].id}`);
+          rowEl?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+      else if (key === 'w') {
+        e.preventDefault();
+        const currentStudent = sectionStudents[currentIndex];
+        if (currentStudent) {
+          onUpdateAttendance(selectedDate, currentStudent.id, 'withdrawn');
+          const nextIndex = (currentIndex + 1) % sectionStudents.length;
+          setFocusedStudentId(sectionStudents[nextIndex].id);
+          const rowEl = document.getElementById(`student-row-${sectionStudents[nextIndex].id}`);
+          rowEl?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+      else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Escape') {
+        e.preventDefault();
+        const currentStudent = sectionStudents[currentIndex];
+        if (currentStudent) {
+          onClearAttendance(selectedDate, [currentStudent.id]);
+        }
+      }
+      else if (key === 'n') {
+        e.preventDefault();
+        const currentStudent = sectionStudents[currentIndex];
+        if (currentStudent) {
+          const notesForDate = attendanceNotes[selectedDate] || {};
+          const studentNote = notesForDate[currentStudent.id] || '';
+          setEditingNoteStudentId(currentStudent.id);
+          setNoteText(studentNote);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleRosterShortcuts);
+    return () => window.removeEventListener('keydown', handleRosterShortcuts);
+  }, [viewMode, sectionStudents, focusedStudentId, selectedDate, onUpdateAttendance, onClearAttendance, attendanceNotes]);
 
   // Clear editing states if group or day transitions
   useEffect(() => {
@@ -477,11 +584,14 @@ export default function CalendarAttendance({
                     blockColorClass = 'bg-amber-50/30 border border-amber-205 text-amber-800 hover:bg-amber-100/40';
                   }
 
+                  const studentNote = selectedStudentId ? (attendanceNotes[cell.dateString]?.[selectedStudentId] || '') : '';
+                  const hasNote = studentNote && studentNote.trim() !== '';
+
                   return (
                     <button
                       key={`student-cell-${cell.dateString}-${idx}`}
                       onClick={() => onSelectDate(cell.dateString)}
-                      className={`relative p-2 rounded-lg text-xs font-semibold aspect-square flex flex-col items-center justify-center cursor-pointer transition-all ${blockColorClass}`}
+                      className={`group relative p-2 rounded-lg text-xs font-semibold aspect-square flex flex-col items-center justify-center cursor-pointer transition-all ${blockColorClass}`}
                     >
                       <span className="text-[11px] font-bold z-10 leading-none">{cell.dayNum}</span>
                       
@@ -498,6 +608,29 @@ export default function CalendarAttendance({
                         }`}>A</span>
                       ) : (
                         <span className="text-[7px] font-bold text-slate-300 mt-1">-</span>
+                      )}
+
+                      {/* Hover note tooltip for Single Student View Mode */}
+                      {hasNote && (
+                        <>
+                          <div className={`absolute top-0.5 left-0.5 p-0.5 rounded-full z-20 ${
+                            isSelected ? 'text-indigo-200' : 'text-indigo-500 animate-pulse'
+                          }`}>
+                            <MessageSquare className="w-2.5 h-2.5 shrink-0" />
+                          </div>
+                          
+                          {/* Note Tooltip */}
+                          <div className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-150 absolute bottom-[108%] left-1/2 -translate-x-1/2 w-48 p-2.5 bg-slate-900 border border-slate-800 text-white rounded-xl shadow-xl pointer-events-none z-55 text-left font-medium leading-normal">
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+                            <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-indigo-400 mb-1">
+                              <MessageSquare className="w-3 h-3 text-indigo-400" />
+                              <span>Roll Note</span>
+                            </div>
+                            <p className="text-[10px] text-slate-200 line-clamp-3 leading-snug break-words font-medium normal-case">
+                              {studentNote}
+                            </p>
+                          </div>
+                        </>
                       )}
                     </button>
                   );
@@ -516,6 +649,18 @@ export default function CalendarAttendance({
                     blockColorClass = 'bg-amber-50/30 border border-amber-200/50 text-amber-700 hover:bg-amber-100/55';
                   }
 
+                  // Check if any student in the active section has a note on this date
+                  const sectionNotes = attendanceNotes[cell.dateString] || {};
+                  const studentsWithNotes = Object.entries(sectionNotes)
+                    .filter(([stId, noteText]) => {
+                      return noteText && noteText.trim() !== '' && sectionStudents.some(s => s.id === stId);
+                    })
+                    .map(([stId, noteText]) => {
+                      const name = sectionStudents.find(s => s.id === stId)?.name || 'Student';
+                      return { name, note: noteText };
+                    });
+                  const hasSectionNotes = studentsWithNotes.length > 0;
+
                   return (
                     <button
                       key={`roster-cell-${cell.dateString}-${idx}`}
@@ -525,7 +670,7 @@ export default function CalendarAttendance({
                         setCurrentYear(Number(y));
                         setCurrentMonth(Number(m) - 1);
                       }}
-                      className={`relative p-2.5 rounded-lg text-xs font-semibold transition-all aspect-square flex flex-col items-center justify-center cursor-pointer ${blockColorClass}`}
+                      className={`group relative p-2.5 rounded-lg text-xs font-semibold transition-all aspect-square flex flex-col items-center justify-center cursor-pointer ${blockColorClass}`}
                     >
                       <span className="z-10">{cell.dayNum}</span>
                       
@@ -542,6 +687,34 @@ export default function CalendarAttendance({
                             ? (isSelected ? 'bg-emerald-300' : 'bg-emerald-500')
                             : (isSelected ? 'bg-amber-300' : 'bg-amber-500')
                         }`} />
+                      )}
+
+                      {/* Hover note tooltip for Roster View Mode */}
+                      {hasSectionNotes && (
+                        <>
+                          <div className={`absolute top-0.5 left-0.5 p-0.5 rounded-full z-20 ${
+                            isSelected ? 'text-indigo-200' : 'text-indigo-500 animate-pulse'
+                          }`}>
+                            <MessageSquare className="w-2.5 h-2.5 shrink-0" />
+                          </div>
+                          
+                          {/* Section Notes Tooltip */}
+                          <div className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-150 absolute bottom-[108%] left-1/2 -translate-x-1/2 w-56 p-2.5 bg-slate-900 border border-slate-800 text-white rounded-xl shadow-xl pointer-events-none z-55 text-left font-medium leading-normal">
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+                            <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-indigo-400 mb-1.5 border-b border-slate-800 pb-1">
+                              <MessageSquare className="w-3 h-3 text-indigo-400" />
+                              <span>Cohort Notes ({studentsWithNotes.length})</span>
+                            </div>
+                            <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
+                              {studentsWithNotes.map((item, si) => (
+                                <div key={si} className="text-[10px] leading-tight break-words font-medium normal-case">
+                                  <span className="font-extrabold text-indigo-200 block truncate">{item.name}:</span>
+                                  <span className="text-slate-300 block italic">"{item.note}"</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </>
                       )}
                     </button>
                   );
@@ -1056,6 +1229,16 @@ export default function CalendarAttendance({
               )}
 
               {/* Roster Sheet */}
+              <div className="mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between px-1 select-none flex-wrap gap-2">
+                <span>Roster Sheet</span>
+                <div id="roster-shortcuts-help" className="flex items-center gap-2 text-slate-400 font-semibold normal-case">
+                  <span className="flex items-center gap-0.5"><kbd className="bg-slate-100 border border-slate-200 text-[9px] px-1 rounded shadow-3xs font-mono font-bold text-slate-600">↑↓</kbd> Nav</span>
+                  <span className="flex items-center gap-0.5"><kbd className="bg-slate-100 border border-slate-200 text-[9px] px-1 rounded shadow-3xs font-mono font-bold text-slate-600">P</kbd> Present</span>
+                  <span className="flex items-center gap-0.5"><kbd className="bg-slate-100 border border-slate-200 text-[9px] px-1 rounded shadow-3xs font-mono font-bold text-slate-600">A</kbd> Absent</span>
+                  <span className="flex items-center gap-0.5"><kbd className="bg-slate-100 border border-slate-200 text-[9px] px-1 rounded shadow-3xs font-mono font-bold text-slate-600">W</kbd> Withdraw</span>
+                  <span className="flex items-center gap-0.5"><kbd className="bg-slate-100 border border-slate-200 text-[9px] px-1 rounded shadow-3xs font-mono font-bold text-slate-600">N</kbd> Note</span>
+                </div>
+              </div>
               <div className="border border-slate-100 rounded-xl overflow-hidden max-h-[300px] overflow-y-auto bg-slate-50/20">
                 {sectionStudents.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 px-4 text-center select-none">
@@ -1068,12 +1251,22 @@ export default function CalendarAttendance({
                       const dateNotes = attendanceNotes[selectedDate] || {};
                       const studentNote = dateNotes[student.id] || '';
                       const isEditingNote = editingNoteStudentId === student.id;
+                      const isFocused = student.id === focusedStudentId;
 
                       return (
-                        <div key={student.id} className="border-b last:border-b-0 border-slate-100/60 bg-white">
+                        <div 
+                          key={student.id} 
+                          id={`student-row-${student.id}`}
+                          onClick={() => setFocusedStudentId(student.id)}
+                          className={`border-b last:border-b-0 border-slate-100/60 transition-all cursor-pointer relative select-none ${
+                            isFocused 
+                              ? 'bg-indigo-50/25 border-l-2 border-l-indigo-500/80 shadow-3xs' 
+                              : 'bg-white border-l-2 border-l-transparent'
+                          }`}
+                        >
                           
                           {/* Main Student Row */}
-                          <div className="px-4 py-3 flex items-center justify-between gap-4 hover:bg-slate-50/30 transition-all">
+                          <div className={`px-4 py-3 flex items-center justify-between gap-4 transition-all ${isFocused ? 'bg-indigo-50/10' : 'hover:bg-slate-50/30'}`}>
                             {/* Name & Note indicator with tooltip decoration */}
                             <div className="flex items-center gap-2 min-w-0 flex-1">
                               <span className={`text-xs font-semibold truncate max-w-[150px] sm:max-w-xs ${student.isWithdrawn ? 'text-slate-400 line-through decoration-rose-300' : 'text-slate-750'}`}>

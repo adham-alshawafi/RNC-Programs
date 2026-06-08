@@ -29,6 +29,8 @@ interface StudentCalendarViewProps {
   holidays: Record<string, string[]>;
   onToggleHoliday: (date: string, sectionId: string) => void;
   canceledClasses: Record<string, Record<string, string>>;
+  onToggleCanceledClass?: (date: string, sectionId: string, note?: string) => void;
+  onUpdateCanceledNote?: (date: string, sectionId: string, note: string) => void;
 }
 
 export default function StudentCalendarView({
@@ -38,10 +40,25 @@ export default function StudentCalendarView({
   attendanceNotes,
   holidays,
   onToggleHoliday,
-  canceledClasses
+  canceledClasses,
+  onToggleCanceledClass,
+  onUpdateCanceledNote
 }: StudentCalendarViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  
+  // States for interactive selected day details modal
+  const [selectedCellDate, setSelectedCellDate] = useState<string | null>(null);
+  const [localCancelNote, setLocalCancelNote] = useState('');
+
+  // Sync cancellation reason changes
+  useEffect(() => {
+    if (selectedCellDate) {
+      const sectionCanceled = canceledClasses[activeSection.id] || {};
+      const note = sectionCanceled[selectedCellDate] || '';
+      setLocalCancelNote(note);
+    }
+  }, [selectedCellDate, activeSection.id, canceledClasses]);
   
   // Local calendar month state initialized to June 2026 (matching system timeframe)
   const [currentYear, setCurrentYear] = useState(2026);
@@ -514,12 +531,12 @@ export default function StudentCalendarView({
                         key={idx}
                         onClick={() => {
                           if (cell.isCurrentMonth) {
-                            onToggleHoliday(cell.dateString, activeSection.id);
+                            setSelectedCellDate(cell.dateString);
                           }
                         }}
                         title={
                           cell.isCurrentMonth 
-                            ? `${cell.dateString} - ${isCanceled ? `Canceled: "${cancelNote}"` : isHoliday ? 'Holiday' : status ? status : 'No attendance record'}. Click to toggle Holiday.`
+                            ? `${cell.dateString} - ${isCanceled ? `Canceled: "${cancelNote}"` : isHoliday ? 'Holiday' : status ? status : 'No attendance record'}. Click to view details.`
                             : ''
                         }
                         className={`min-h-[60px] sm:min-h-[70px] p-1 rounded-xl flex flex-col justify-between transition-all relative select-none cursor-pointer group border ${blockClass} ${
@@ -553,7 +570,7 @@ export default function StudentCalendarView({
 
                         {/* Interactive fast info label when hover */}
                         <div className="hidden sm:block text-[7px] font-black uppercase text-center tracking-widest leading-none mt-1 opacity-0 group-hover:opacity-100 group-hover:text-indigo-600 font-sans">
-                          {cell.isCurrentMonth ? 'Toggle Hol' : ''}
+                          {cell.isCurrentMonth ? 'View Details' : ''}
                         </div>
                       </div>
                     );
@@ -590,7 +607,7 @@ export default function StudentCalendarView({
                   </div>
                   <div className="text-indigo-600/80 font-bold normal-case text-[10px] flex items-center gap-1 shrink-0">
                     <HelpCircle className="w-3.5 h-3.5" />
-                    <span>Click block in the current month map to toggle School Holiday.</span>
+                    <span>Click block in the current month map to view details or toggle Holiday/Canceled status.</span>
                   </div>
                 </div>
 
@@ -793,6 +810,219 @@ export default function StudentCalendarView({
         </div>
 
       </div>
+
+      {/* POPUP MODAL FOR DAY DETAILS (HOLIDAY OR CANCELED STATUS) */}
+      <AnimatePresence>
+        {selectedCellDate && (() => {
+          const isHoliday = activeSectionHolidays.includes(selectedCellDate);
+          const sectionCanceled = canceledClasses[activeSection.id] || {};
+          const cancelNote = sectionCanceled[selectedCellDate];
+          const isCanceled = typeof cancelNote === 'string';
+          
+          const status = attendance[selectedCellDate]?.[selectedStudentId] || '';
+          const note = attendanceNotes[selectedCellDate]?.[selectedStudentId];
+
+          const formattedDate = new Date(selectedCellDate).toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+
+          return (
+            <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white rounded-2xl shadow-xl border border-slate-100 w-full max-w-md overflow-hidden"
+              >
+                {/* Header of Modal */}
+                <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-150 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <CalendarIcon className="w-5 h-5 text-indigo-600" />
+                    <div>
+                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">Date Information</h4>
+                      <p className="text-[10px] text-slate-400 font-bold">{selectedCellDate}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCellDate(null)}
+                    className="p-1.5 hover:bg-slate-200/60 rounded-lg text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Body of Modal */}
+                <div className="p-6 space-y-4">
+                  <div className="text-center py-2 bg-indigo-50/50 border border-indigo-100 rounded-xl text-xs font-bold text-slate-700 font-sans">
+                    {formattedDate}
+                  </div>
+
+                  {/* STATUS CARDS */}
+                  <div className="space-y-2.5">
+                    
+                    {/* HOLIDAY STATUS CARD */}
+                    <div className={`p-4 rounded-xl border flex items-start gap-3 transition ${
+                      isHoliday 
+                        ? 'bg-amber-50/70 border-amber-200 text-amber-900' 
+                        : 'bg-slate-50/50 border-slate-100 text-slate-500'
+                    }`}>
+                      <Coffee className={`w-5 h-5 shrink-0 ${isHoliday ? 'text-amber-600' : 'text-slate-400'}`} />
+                      <div className="space-y-1 flex-1 leading-snug">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black uppercase tracking-wider">School Holiday</span>
+                          {isHoliday && (
+                            <span className="px-1.5 py-0.5 bg-amber-100 border border-amber-200 text-amber-800 text-[8px] rounded-sm font-black uppercase">Active</span>
+                          )}
+                        </div>
+                        <p className="text-[10.5px] text-slate-500 font-medium font-sans">
+                          {isHoliday 
+                            ? 'Marked as school-wide holiday. No student records count toward compliance on holidays.' 
+                            : 'This is not a designated school-wide holiday.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* CANCELED STATUS CARD */}
+                    <div className={`p-4 rounded-xl border flex items-start gap-3 transition ${
+                      isCanceled 
+                        ? 'bg-rose-50/70 border-rose-200 text-rose-900' 
+                        : 'bg-slate-50/50 border-slate-100 text-slate-500'
+                    }`}>
+                      <CalendarX className={`w-5 h-5 shrink-0 ${isCanceled ? 'text-rose-600 animate-pulse' : 'text-slate-400'}`} />
+                      <div className="space-y-1 flex-1 leading-snug">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black uppercase tracking-wider">Canceled Class</span>
+                          {isCanceled && (
+                            <span className="px-1.5 py-0.5 bg-rose-100 border border-rose-200 text-rose-800 text-[8px] rounded-sm font-black uppercase">Canceled</span>
+                          )}
+                        </div>
+                        <p className="text-[10.5px] text-slate-500 font-medium font-sans">
+                          {isCanceled 
+                            ? `Class session was canceled: "${cancelNote}"` 
+                            : 'This is an active academic class schedule day.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* STUDENT RECORD RECAP CARD */}
+                    {!isHoliday && !isCanceled && selectedStudent && (
+                      <div className="p-4 rounded-xl bg-slate-50 border border-slate-100/80 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4 text-slate-500 animate-pulse" />
+                          <span className="text-xs font-bold text-slate-700">Record for {selectedStudent.name}:</span>
+                        </div>
+                        <div className="flex items-center justify-between leading-none py-1.5 px-2 bg-white border border-slate-105 rounded-lg text-xs font-extrabold text-slate-800">
+                          <span>Attendance:</span>
+                          {status === 'present' ? (
+                            <span className="text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded uppercase text-[9px] font-black">Present</span>
+                          ) : status === 'absent' ? (
+                            <span className="text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded uppercase text-[9px] font-black">Absent</span>
+                          ) : status === 'withdrawn' ? (
+                            <span className="text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded uppercase text-[9px] font-black">Withdrawn</span>
+                          ) : (
+                            <span className="text-slate-400 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded uppercase text-[9px] font-bold">Unmarked</span>
+                          )}
+                        </div>
+                        {note && (
+                          <div className="p-2 bg-white/70 border border-slate-100 rounded-lg text-[10.5px] text-slate-500 leading-relaxed font-sans italic">
+                            &ldquo;{note}&rdquo;
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                  </div>
+
+                  {/* HOLIDAY & CANCELED ACTION ZONE FORM */}
+                  <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-xl space-y-3.5">
+                    <span className="text-[10px] text-slate-450 font-bold uppercase tracking-wider block">Manage Status Actions</span>
+                    
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {/* Toggle Holiday Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isCanceled && onToggleCanceledClass) {
+                            onToggleCanceledClass(selectedCellDate, activeSection.id);
+                          }
+                          onToggleHoliday(selectedCellDate, activeSection.id);
+                        }}
+                        className={`py-2 px-3 rounded-xl text-[10px] font-black tracking-wide uppercase border flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-3xs ${
+                          isHoliday
+                            ? 'bg-amber-500 border-amber-600 text-white hover:bg-amber-600'
+                            : 'bg-white hover:bg-slate-50 border-slate-200 text-amber-700 hover:text-amber-805'
+                        }`}
+                      >
+                        <Coffee className="w-3.5 h-3.5" />
+                        <span>{isHoliday ? 'Remove Holiday' : 'Mark Holiday'}</span>
+                      </button>
+
+                      {/* Toggle Cancel Class Button */}
+                      {onToggleCanceledClass ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isHoliday) {
+                              onToggleHoliday(selectedCellDate, activeSection.id);
+                            }
+                            onToggleCanceledClass(selectedCellDate, activeSection.id, localCancelNote || 'Class canceled');
+                          }}
+                          className={`py-2 px-3 rounded-xl text-[10px] font-black tracking-wide uppercase border flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-3xs ${
+                            isCanceled
+                              ? 'bg-rose-600 border-rose-700 text-white hover:bg-rose-700'
+                              : 'bg-white hover:bg-slate-50 border-slate-200 text-rose-750 hover:text-rose-800'
+                          }`}
+                        >
+                          <CalendarX className="w-3.5 h-3.5" />
+                          <span>{isCanceled ? 'Remove Cancel' : 'Cancel Class'}</span>
+                        </button>
+                      ) : (
+                        <div className="text-[9.5px] text-slate-400 font-bold text-center border border-dashed border-slate-200 rounded-xl px-2 py-2 flex items-center justify-center">
+                          Cancel functions disabled
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Cancel class note inline manager */}
+                    {isCanceled && onUpdateCanceledNote && (
+                      <div className="space-y-1.5 animate-fade-in pt-1 border-t border-slate-100">
+                        <label className="text-[9.5px] text-slate-455 font-black uppercase tracking-wider block">Reason for cancellation:</label>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            placeholder="e.g. Inclement Weather, Professional Dev, Sick leave"
+                            value={localCancelNote}
+                            onChange={e => {
+                              setLocalCancelNote(e.target.value);
+                              onUpdateCanceledNote(selectedCellDate, activeSection.id, e.target.value);
+                            }}
+                            className="flex-1 px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-indigo-500 font-semibold"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer of Modal */}
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-150 flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCellDate(null)}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-750 text-white text-xs font-black rounded-xl cursor-pointer transition shadow-xs"
+                  >
+                    Close Details
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
 
     </div>
   );

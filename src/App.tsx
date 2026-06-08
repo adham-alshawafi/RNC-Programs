@@ -1866,6 +1866,8 @@ export default function App() {
                   holidays={holidays}
                   onToggleHoliday={handleToggleHoliday}
                   canceledClasses={canceledClasses}
+                  onToggleCanceledClass={handleToggleCanceledClass}
+                  onUpdateCanceledNote={handleUpdateCanceledNote}
                 />
               )}
 

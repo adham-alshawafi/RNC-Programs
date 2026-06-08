@@ -153,6 +153,7 @@ export default function App() {
     setActiveSectionId('');
     setAttendanceThreshold(75);
     setDismissedAlerts([]);
+    setContactedAlerts([]);
   };
 
   const handleDeleteAccount = () => {
@@ -179,6 +180,7 @@ export default function App() {
     localStorage.removeItem(`attendance_${email}_custom_intakes`);
     localStorage.removeItem(`attendance_${email}_attendance_threshold`);
     localStorage.removeItem(`attendance_${email}_dismissed_alerts`);
+    localStorage.removeItem(`attendance_${email}_contacted_alerts`);
 
     // 3. Clear reset tokens specifically for this user
     const savedTokens = JSON.parse(localStorage.getItem('attendance_reset_tokens') || '{}');
@@ -310,6 +312,14 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [contactedAlerts, setContactedAlerts] = useState<string[]>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return [];
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_contacted_alerts`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [alertsBarExpanded, setAlertsBarExpanded] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('attendance_alerts_bar_expanded');
@@ -336,6 +346,13 @@ export default function App() {
       localStorage.setItem(`attendance_${email}_dismissed_alerts`, JSON.stringify(dismissedAlerts));
     }
   }, [dismissedAlerts, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_contacted_alerts`, JSON.stringify(contactedAlerts));
+    }
+  }, [contactedAlerts, currentUser]);
 
   const [draftEmailContext, setDraftEmailContext] = useState<{
     studentName: string;
@@ -1262,18 +1279,21 @@ export default function App() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[340px] overflow-y-auto pr-1">
                       {activeAlerts.map(alert => {
                         const isConsecutive = alert.type === 'consecutive';
+                        const isContacted = contactedAlerts.includes(alert.id);
                         
                         return (
                           <div
                             key={alert.id}
                             className={`p-3 rounded-xl border flex flex-col justify-between gap-3 font-medium text-xs transition duration-150 hover:shadow-xs group/warn ${
-                              isConsecutive
+                              isContacted
+                                ? 'bg-emerald-50/30 border-emerald-200 hover:border-emerald-350 text-slate-700'
+                                : isConsecutive
                                 ? 'bg-rose-50/45 border-rose-100/90 hover:border-rose-250 text-slate-700'
                                 : 'bg-amber-50/45 border-amber-100/95 hover:border-amber-250 text-slate-700'
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2.5">
-                              <div className="space-y-1.5">
+                              <div className="space-y-1.5 flex-1">
                                 <div className="flex items-center gap-1.5 flex-wrap leading-none">
                                   <span className="font-extrabold font-display text-slate-900 group-hover/warn:text-indigo-650 transition-colors uppercase tracking-tight">
                                     {alert.student.name}
@@ -1281,6 +1301,12 @@ export default function App() {
                                   <span className="text-[9px] bg-slate-200/80 border border-slate-250/20 text-slate-600 rounded px-1.5 py-0.5 font-bold uppercase tracking-wider">
                                     Class: {alert.sectionName}
                                   </span>
+                                  {isContacted && (
+                                    <span className="text-[9px] font-black bg-emerald-600 text-white rounded px-1.5 py-0.5 uppercase tracking-wide flex items-center gap-0.5">
+                                      <Check className="w-2.5 h-2.5" />
+                                      <span>Contacted</span>
+                                    </span>
+                                  )}
                                   {isConsecutive ? (
                                     <span className="text-[9px] font-black bg-rose-600 text-white rounded px-1.5 py-0.5 uppercase tracking-wide">
                                       Critical Consecutive Absence
@@ -1306,7 +1332,7 @@ export default function App() {
                                   </div>
                                 )}
                               </div>
-
+ 
                               {/* Dismiss action trigger button */}
                               <button
                                 type="button"
@@ -1317,29 +1343,68 @@ export default function App() {
                                 <X className="w-3.5 h-3.5" />
                               </button>
                             </div>
-
+ 
                             {/* Coach intervention actions footer trigger */}
-                            <div className="flex items-center justify-between border-t border-slate-100/50 pt-2 bg-transparent select-none">
-                              <span className="text-[9.5px] text-slate-400 font-bold italic">Requires counselor intervention</span>
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100/50 pt-2 bg-transparent select-none">
+                              {isContacted ? (
+                                <span className="text-[9.5px] text-emerald-650 font-extrabold flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Outreach successfully resolved</span>
+                                </span>
+                              ) : (
+                                <span className="text-[9.5px] text-slate-400 font-bold italic">Requires counselor intervention</span>
+                              )}
                               
-                              <button
-                                type="button"
-                                onClick={() => setDraftEmailContext({
-                                  studentName: alert.student.name,
-                                  sectionName: alert.sectionName,
-                                  type: alert.type,
-                                  dates: alert.dates,
-                                  percentage: alert.percentage
-                                })}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1 text-[10px] font-extrabold rounded-lg shadow-3xs cursor-pointer transition hover:scale-102 hover:shadow-2xs leading-none border ${
-                                  isConsecutive
-                                    ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600'
-                                    : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500'
-                                }`}
-                              >
-                                <Mail className="w-3 h-3" />
-                                <span>Coaching Outreach</span>
-                              </button>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setContactedAlerts(prev => {
+                                      if (prev.includes(alert.id)) {
+                                        return prev.filter(id => id !== alert.id);
+                                      } else {
+                                        return [...prev, alert.id];
+                                      }
+                                    });
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all border outline-none cursor-pointer ${
+                                    isContacted
+                                      ? 'bg-emerald-50 border-emerald-250 text-emerald-700 font-extrabold shadow-3xs'
+                                      : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:text-indigo-600'
+                                  }`}
+                                >
+                                  {isContacted ? (
+                                    <>
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span>Contacted!</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Check className="w-3.5 h-3.5" />
+                                      <span>Done contacting the student</span>
+                                    </>
+                                  )}
+                                </button>
+ 
+                                <button
+                                  type="button"
+                                  onClick={() => setDraftEmailContext({
+                                    studentName: alert.student.name,
+                                    sectionName: alert.sectionName,
+                                    type: alert.type,
+                                    dates: alert.dates,
+                                    percentage: alert.percentage
+                                  })}
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1 text-[10px] font-extrabold rounded-lg shadow-3xs cursor-pointer transition hover:scale-102 hover:shadow-2xs leading-none border ${
+                                    isConsecutive
+                                      ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600'
+                                      : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500'
+                                  }`}
+                                >
+                                  <Mail className="w-3 h-3" />
+                                  <span>Coaching Outreach</span>
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );

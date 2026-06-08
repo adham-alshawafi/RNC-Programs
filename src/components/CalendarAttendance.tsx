@@ -575,7 +575,7 @@ export default function CalendarAttendance({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* LEFT: Monthly Calendar Grid Component */}
-        <div className="lg:col-span-5 bg-white border border-slate-100 rounded-2xl shadow-sm p-5 flex flex-col justify-between">
+        <div className="lg:col-span-4 bg-white border border-slate-100 rounded-2xl shadow-sm p-5 flex flex-col justify-between">
           <div>
             {/* Header */}
             <div className="flex items-center justify-between mb-5">
@@ -896,7 +896,7 @@ export default function CalendarAttendance({
         </div>
 
         {/* RIGHT PANEL DESIGNS */}
-        <div className="lg:col-span-7 bg-white border border-slate-100 rounded-2xl shadow-sm p-6 flex flex-col justify-between">
+        <div className="lg:col-span-8 bg-white border border-slate-100 rounded-2xl shadow-sm p-6 flex flex-col justify-between">
           
           {viewMode === 'student' ? (
             // INDIVIDUAL STUDENT PROFILE WORKSPACE
@@ -1427,7 +1427,7 @@ export default function CalendarAttendance({
                   <span className="flex items-center gap-0.5"><kbd className="bg-slate-100 border border-slate-200 text-[9px] px-1 rounded shadow-3xs font-mono font-bold text-slate-600">N</kbd> Note</span>
                 </div>
               </div>
-              <div className="border border-slate-100 rounded-xl overflow-hidden max-h-[300px] overflow-y-auto bg-slate-50/20">
+              <div className="border border-slate-100 rounded-xl overflow-hidden max-h-[500px] overflow-y-auto bg-slate-50/20">
                 {sectionStudents.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 px-4 text-center select-none">
                     <p className="text-xs text-slate-400 leading-normal">Please add students to this section to mark attendance.</p>
@@ -1457,7 +1457,7 @@ export default function CalendarAttendance({
                           <div className={`px-4 py-3 flex items-center justify-between gap-4 transition-all ${isFocused ? 'bg-indigo-50/10' : 'hover:bg-slate-50/30'}`}>
                             {/* Name & Note indicator with tooltip decoration */}
                             <div className="flex items-center gap-2 min-w-0 flex-1">
-                              <span className={`text-xs font-semibold truncate max-w-[150px] sm:max-w-xs ${student.isWithdrawn ? 'text-slate-400 line-through decoration-rose-300' : 'text-slate-750'}`}>
+                              <span className={`text-xs font-semibold truncate max-w-[240px] sm:max-w-md xl:max-w-xl ${student.isWithdrawn ? 'text-slate-400 line-through decoration-rose-300' : 'text-slate-750'}`}>
                                 {student.name}
                               </span>
                               {student.isWithdrawn && (

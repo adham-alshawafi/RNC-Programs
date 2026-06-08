@@ -47,6 +47,8 @@ interface IntakeBoardProps {
   onAddIntake: (name: string) => void;
   onRenameIntake: (oldName: string, newName: string) => void;
   onDeleteIntake: (name: string) => void;
+  canceledClasses: Record<string, Record<string, string>>;
+  attendanceThreshold?: number;
 }
 
 export default function IntakeBoard({
@@ -59,6 +61,8 @@ export default function IntakeBoard({
   onAddIntake,
   onRenameIntake,
   onDeleteIntake,
+  canceledClasses,
+  attendanceThreshold = 75,
 }: IntakeBoardProps) {
   // Local UI States
   const [selectedCohort, setSelectedCohort] = useState<string>('all'); // specific intake or 'all'
@@ -86,9 +90,14 @@ export default function IntakeBoard({
   const studentFullCalculations = useMemo(() => {
     return students.map(student => {
       const studentHolidays = holidays[student.sectionId] || [];
+      const studentCanceled = canceledClasses[student.sectionId] || {};
       const studentSectionDates = submittedDates[student.sectionId] || [];
       
-      const studentFilteredDates = studentSectionDates.filter(date => !studentHolidays.includes(date));
+      const studentFilteredDates = studentSectionDates.filter(date => {
+        const isHoliday = studentHolidays.includes(date);
+        const isCanceled = studentCanceled[date] !== undefined;
+        return !isHoliday && !isCanceled;
+      });
       const totalDaysCount = studentFilteredDates.length;
 
       let presentCount = 0;
@@ -118,7 +127,7 @@ export default function IntakeBoard({
         sectionName: sections.find(s => s.id === student.sectionId)?.name || 'Default Class',
       };
     });
-  }, [students, attendance, submittedDates, sections, holidays]);
+  }, [students, attendance, submittedDates, sections, holidays, canceledClasses]);
 
   // Group calculations and aggregates by Intake Period Cohorts
   const intakeGroups = useMemo(() => {
@@ -134,7 +143,7 @@ export default function IntakeBoard({
 
       // Extract perfect attenders and at risk cases
       const perfectCount = auditedStudents.filter(s => s.percentage === 100).length;
-      const atRiskCount = auditedStudents.filter(s => s.percentage < 75).length;
+      const atRiskCount = auditedStudents.filter(s => s.percentage < attendanceThreshold).length;
 
       // Find star student in this intake
       const starStudent = cohortStudents.length > 0
@@ -442,7 +451,7 @@ export default function IntakeBoard({
                   <Legend verticalAlign="top" height={36} iconType="circle" iconSize={6} />
                   <Bar dataKey="Average Attendance %" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={25}>
                     {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry['Average Attendance %'] < 75 ? '#f43f5e' : '#4f46e5'} />
+                      <Cell key={`cell-${index}`} fill={entry['Average Attendance %'] < attendanceThreshold ? '#f43f5e' : '#4f46e5'} />
                     ))}
                   </Bar>
                   <Bar dataKey="Students Enrolled" fill="#a5b4fc" radius={[4, 4, 0, 0]} barSize={12} />
@@ -483,10 +492,10 @@ export default function IntakeBoard({
             <div className="p-3 bg-rose-50/40 border border-rose-150/20 rounded-xl flex items-center justify-between text-rose-800">
               <div className="space-y-0.5">
                 <span className="text-[10px] text-rose-700 font-bold block uppercase tracking-wider">Total At-Risk Students</span>
-                <span className="text-xs font-semibold text-rose-650/80 block leading-tight">Attendance rates under 75%</span>
+                <span className="text-xs font-semibold text-rose-650/80 block leading-tight">Attendance rates under {attendanceThreshold}%</span>
               </div>
               <h4 className="text-2xl font-black text-rose-600 font-display shrink-0">
-                {studentFullCalculations.filter(c => c.percentage < 75 && c.trackedDaysCount > 0).length}
+                {studentFullCalculations.filter(c => c.percentage < attendanceThreshold && c.trackedDaysCount > 0).length}
               </h4>
             </div>
 
@@ -535,7 +544,7 @@ export default function IntakeBoard({
           {/* Iterate on specific intake groups */}
           {intakeGroups.map((group) => {
             const isSelected = selectedCohort === group.name;
-            const hasWarning = group.avgPercentage < 75;
+            const hasWarning = group.avgPercentage < attendanceThreshold;
 
             return (
               <div
@@ -587,7 +596,7 @@ export default function IntakeBoard({
                     <strong>{group.studentCount} Students</strong>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span>Risk cases (Rate &lt;75%):</span>
+                    <span>Risk cases (Rate &lt;{attendanceThreshold}%):</span>
                     <strong className={group.atRiskCount > 0 ? 'text-rose-500 font-extrabold' : 'font-normal'}>
                       {group.atRiskCount} Student{group.atRiskCount === 1 ? '' : 's'}
                     </strong>
@@ -677,7 +686,7 @@ export default function IntakeBoard({
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
                 {sortedDisplayStudents.map(({ student, presentCount, percentage, trackedDaysCount }) => {
-                  const isWarning = percentage < 75 && trackedDaysCount > 0;
+                  const isWarning = percentage < attendanceThreshold && trackedDaysCount > 0;
                   const isGold = percentage === 100 && trackedDaysCount > 0;
 
                   return (

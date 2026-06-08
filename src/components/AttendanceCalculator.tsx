@@ -38,6 +38,7 @@ interface AttendanceCalculatorProps {
   onSubmitDate?: (date: string, sectionId: string) => void;
   holidays: Record<string, string[]>;
   onSelectSectionId?: (sectionId: string) => void;
+  canceledClasses: Record<string, Record<string, string>>;
 }
 
 export default function AttendanceCalculator({
@@ -50,6 +51,7 @@ export default function AttendanceCalculator({
   onSubmitDate,
   holidays,
   onSelectSectionId,
+  canceledClasses,
 }: AttendanceCalculatorProps) {
   const [sortField, setSortField] = useState<'name' | 'percentage'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -210,12 +212,14 @@ export default function AttendanceCalculator({
   const isSelectedDateSubmitted = sectionSubmittedDates.includes(dateToUse);
 
   const sectionHolidays = holidays[activeSection.id] || [];
+  const sectionCanceled = canceledClasses[activeSection.id] || {};
 
-  // Filtered dates based on range selection and excluding holidays
+  // Filtered dates based on range selection and excluding holidays/canceled classes
   const filteredSubmittedDates = sectionSubmittedDates.filter(date => {
     if (startDate && date < startDate) return false;
     if (endDate && date > endDate) return false;
     if (sectionHolidays.includes(date)) return false; // Exclude holidays
+    if (sectionCanceled[date] !== undefined) return false; // Exclude canceled days
     return true;
   });
 
@@ -379,11 +383,13 @@ export default function AttendanceCalculator({
   const auditCalculations = auditStudents.map(student => {
     const studentSectionDates = submittedDates[student.sectionId] || [];
     const studentSectionHolidays = holidays[student.sectionId] || [];
+    const studentSectionCanceled = canceledClasses[student.sectionId] || {};
     
     const studentFilteredDates = studentSectionDates.filter(date => {
       if (startDate && date < startDate) return false;
       if (endDate && date > endDate) return false;
       if (studentSectionHolidays.includes(date)) return false;
+      if (studentSectionCanceled[date] !== undefined) return false;
       return true;
     });
 
@@ -725,10 +731,12 @@ export default function AttendanceCalculator({
   comparedSections.forEach(sec => {
     const dates = submittedDates[sec.id] || [];
     const secHolidays = holidays[sec.id] || [];
+    const secCanceled = canceledClasses[sec.id] || {};
     dates.forEach(date => {
       if (startDate && date < startDate) return;
       if (endDate && date > endDate) return;
       if (secHolidays.includes(date)) return; // Exclude section-specific holiday
+      if (secCanceled[date] !== undefined) return; // Exclude section-specific canceled class
       allComparedDatesSet.add(date);
     });
   });
@@ -746,7 +754,8 @@ export default function AttendanceCalculator({
     
     comparedSections.forEach(sec => {
       const secHolidays = holidays[sec.id] || [];
-      if (secHolidays.includes(date)) {
+      const secCanceled = canceledClasses[sec.id] || {};
+      if (secHolidays.includes(date) || secCanceled[date] !== undefined) {
         row[sec.id] = null;
         return;
       }

@@ -25,7 +25,15 @@ import {
   Layers,
   Terminal,
   Keyboard,
-  Search
+  Search,
+  Bell,
+  Mail,
+  ChevronDown,
+  ChevronUp,
+  Sliders,
+  CheckCircle2,
+  AlertCircle,
+  CalendarX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -107,11 +115,20 @@ export default function App() {
     const savedHolidays = localStorage.getItem(`attendance_${email}_holidays`);
     setHolidays(savedHolidays ? JSON.parse(savedHolidays) : {});
 
+    const savedCanceled = localStorage.getItem(`attendance_${email}_canceled_classes`);
+    setCanceledClasses(savedCanceled ? JSON.parse(savedCanceled) : {});
+
     const savedNotes = localStorage.getItem(`attendance_${email}_notes`);
     setAttendanceNotes(savedNotes ? JSON.parse(savedNotes) : {});
 
     const savedActiveSecId = localStorage.getItem(`attendance_${email}_active_section_id`);
     setActiveSectionId(savedActiveSecId || '');
+
+    const savedThreshold = localStorage.getItem(`attendance_${email}_attendance_threshold`);
+    setAttendanceThreshold(savedThreshold ? parseInt(savedThreshold, 10) : 75);
+
+    const savedDismissed = localStorage.getItem(`attendance_${email}_dismissed_alerts`);
+    setDismissedAlerts(savedDismissed ? JSON.parse(savedDismissed) : []);
   };
 
   const handleLogout = () => {
@@ -131,8 +148,11 @@ export default function App() {
     setMarkedDates({});
     setSubmittedDates({});
     setHolidays({});
+    setCanceledClasses({});
     setAttendanceNotes({});
     setActiveSectionId('');
+    setAttendanceThreshold(75);
+    setDismissedAlerts([]);
   };
 
   const handleDeleteAccount = () => {
@@ -153,9 +173,12 @@ export default function App() {
     localStorage.removeItem(`attendance_${email}_marked_dates`);
     localStorage.removeItem(`attendance_${email}_submitted_dates`);
     localStorage.removeItem(`attendance_${email}_holidays`);
+    localStorage.removeItem(`attendance_${email}_canceled_classes`);
     localStorage.removeItem(`attendance_${email}_notes`);
     localStorage.removeItem(`attendance_${email}_active_section_id`);
     localStorage.removeItem(`attendance_${email}_custom_intakes`);
+    localStorage.removeItem(`attendance_${email}_attendance_threshold`);
+    localStorage.removeItem(`attendance_${email}_dismissed_alerts`);
 
     // 3. Clear reset tokens specifically for this user
     const savedTokens = JSON.parse(localStorage.getItem('attendance_reset_tokens') || '{}');
@@ -241,6 +264,14 @@ export default function App() {
     return saved ? JSON.parse(saved) : {};
   });
 
+  const [canceledClasses, setCanceledClasses] = useState<Record<string, Record<string, string>>>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return {};
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_canceled_classes`);
+    return saved ? JSON.parse(saved) : {};
+  });
+
   const [attendanceNotes, setAttendanceNotes] = useState<AttendanceNotesMap>(() => {
     const savedUser = localStorage.getItem('attendance_current_user');
     if (!savedUser) return {};
@@ -261,6 +292,60 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'attendance' | 'weekly_grid' | 'monthly_board' | 'intake_board' | 'students' | 'calculator' | 'student_calendar'>('attendance');
   const [selectedDate, setSelectedDate] = useState<string>('2026-05-31'); // Current local time is 2026-05-31
   const [showCommandPalette, setShowCommandPalette] = useState(false);
+
+  // Warning thresholds & Dismissed alerts states
+  const [attendanceThreshold, setAttendanceThreshold] = useState<number>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return 75;
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_attendance_threshold`);
+    return saved ? parseInt(saved, 10) : 75;
+  });
+
+  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>(() => {
+    const savedUser = localStorage.getItem('attendance_current_user');
+    if (!savedUser) return [];
+    const email = JSON.parse(savedUser).email.toLowerCase().trim();
+    const saved = localStorage.getItem(`attendance_${email}_dismissed_alerts`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [alertsBarExpanded, setAlertsBarExpanded] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('attendance_alerts_bar_expanded');
+      return saved !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('attendance_alerts_bar_expanded', String(alertsBarExpanded));
+  }, [alertsBarExpanded]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_attendance_threshold`, attendanceThreshold.toString());
+    }
+  }, [attendanceThreshold, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_dismissed_alerts`, JSON.stringify(dismissedAlerts));
+    }
+  }, [dismissedAlerts, currentUser]);
+
+  const [draftEmailContext, setDraftEmailContext] = useState<{
+    studentName: string;
+    sectionName: string;
+    type: 'consecutive' | 'threshold';
+    dates?: string[];
+    percentage?: number;
+  } | null>(null);
+
+  const [alertFilterActiveOnly, setAlertFilterActiveOnly] = useState(false);
 
   // Global Ctrl+K / Cmd+K Command Palette Trigger
   useEffect(() => {
@@ -377,6 +462,13 @@ export default function App() {
       localStorage.setItem(`attendance_${email}_holidays`, JSON.stringify(holidays));
     }
   }, [holidays, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const email = currentUser.email.toLowerCase().trim();
+      localStorage.setItem(`attendance_${email}_canceled_classes`, JSON.stringify(canceledClasses));
+    }
+  }, [canceledClasses, currentUser]);
 
   useEffect(() => {
     if (currentUser) {
@@ -774,9 +866,188 @@ export default function App() {
     });
   };
 
+  const handleToggleCanceledClass = (date: string, sectionId: string, note?: string) => {
+    setCanceledClasses(prev => {
+      const sectionCanceled = prev[sectionId] || {};
+      const updatedSection = { ...sectionCanceled };
+      if (updatedSection[date] !== undefined) {
+        delete updatedSection[date];
+      } else {
+        updatedSection[date] = note || "Class canceled";
+      }
+      return {
+        ...prev,
+        [sectionId]: updatedSection
+      };
+    });
+  };
+
+  const handleUpdateCanceledNote = (date: string, sectionId: string, note: string) => {
+    setCanceledClasses(prev => {
+      const sectionCanceled = prev[sectionId] || {};
+      return {
+        ...prev,
+        [sectionId]: {
+          ...sectionCanceled,
+          [date]: note
+        }
+      };
+    });
+  };
+
   // Global metrics across entire app
   const totalGlobalStudents = students.length;
   const activeSectionStudents = students.filter(s => s.sectionId === activeSectionId);
+
+  // Compute student alerts & statistics dynamically
+  const studentMetrics = useMemo(() => {
+    return students.map(student => {
+      const studentHolidays = holidays[student.sectionId] || [];
+      const studentCanceled = canceledClasses[student.sectionId] || {};
+      const studentSectionDates = submittedDates[student.sectionId] || [];
+      
+      const activeDates = studentSectionDates.filter(date => {
+        const isHoliday = studentHolidays.includes(date);
+        const isCanceled = studentCanceled[date] !== undefined;
+        return !isHoliday && !isCanceled;
+      });
+
+      let presentCount = 0;
+      let absentCount = 0;
+
+      activeDates.forEach(date => {
+        const records = attendance[date] || {};
+        const status = records[student.id];
+        
+        if (status === 'present') {
+          presentCount++;
+        } else if (status === 'absent' || status === undefined) {
+          absentCount++;
+        }
+      });
+
+      const totalDays = activeDates.length;
+      const percentage = totalDays > 0 
+        ? Math.round((presentCount / totalDays) * 100) 
+        : 100;
+
+      // Find consecutive absence streaks on all active class dates (marked or submitted)
+      const allClassDates = Array.from(new Set([
+        ...(markedDates[student.sectionId] || []),
+        ...(submittedDates[student.sectionId] || [])
+      ])).filter(date => {
+        const hList = holidays[student.sectionId] || [];
+        const cConfig = canceledClasses[student.sectionId] || {};
+        return !hList.includes(date) && cConfig[date] === undefined;
+      }).sort();
+
+      const streaks: string[][] = [];
+      let currentStreak: string[] = [];
+
+      allClassDates.forEach(date => {
+        const records = attendance[date] || {};
+        const status = records[student.id];
+        const isAbsent = status === 'absent' || (submittedDates[student.sectionId]?.includes(date) && status === undefined);
+        
+        if (isAbsent && !student.isWithdrawn) {
+          currentStreak.push(date);
+        } else {
+          if (currentStreak.length >= 2) {
+            streaks.push([...currentStreak]);
+          }
+          currentStreak = [];
+        }
+      });
+
+      if (currentStreak.length >= 2) {
+        streaks.push([...currentStreak]);
+      }
+
+      return {
+        student,
+        presentCount,
+        absentCount,
+        totalDays,
+        percentage,
+        isAtRisk: totalDays > 0 && percentage < attendanceThreshold,
+        consecutiveAbsences: streaks, // List of arrays of consecutive absence date strings
+        hasConsecutiveAbsence: streaks.length > 0
+      };
+    });
+  }, [students, attendance, submittedDates, markedDates, holidays, canceledClasses, attendanceThreshold]);
+
+  const handleDismissAlert = (alertId: string) => {
+    setDismissedAlerts(prev => {
+      if (!prev.includes(alertId)) {
+        return [...prev, alertId];
+      }
+      return prev;
+    });
+  };
+
+  const handleRestoreAlerts = () => {
+    setDismissedAlerts([]);
+  };
+
+  // Filtered Alert lists for the notification center
+  const activeAlerts = useMemo(() => {
+    const list: Array<{
+      id: string;
+      type: 'consecutive' | 'threshold';
+      student: Student;
+      sectionName: string;
+      message: string;
+      dates?: string[];
+      percentage?: number;
+    }> = [];
+
+    studentMetrics.forEach(m => {
+      // Skip if filtered by active section only
+      if (alertFilterActiveOnly && m.student.sectionId !== activeSectionId) return;
+
+      const secName = sections.find(s => s.id === m.student.sectionId)?.name || 'Default';
+
+      // 1. Consecutive Absences Alerts (2 or more days)
+      m.consecutiveAbsences.forEach(streak => {
+        const id = `consecutive-${m.student.id}-${streak[0]}-${streak[streak.length - 1]}`;
+        const isDismissed = dismissedAlerts.includes(id);
+        
+        if (!isDismissed) {
+          list.push({
+            id,
+            type: 'consecutive',
+            student: m.student,
+            sectionName: secName,
+            message: `Absent for ${streak.length} consecutive active class days`,
+            dates: streak
+          });
+        }
+      });
+
+      // 2. Threshold Alerts (<75% overall or custom threshold)
+      if (m.isAtRisk) {
+        const id = `threshold-${m.student.id}`;
+        const isDismissed = dismissedAlerts.includes(id);
+
+        if (!isDismissed) {
+          list.push({
+            id,
+            type: 'threshold',
+            student: m.student,
+            sectionName: secName,
+            message: `Current attendance is at ${m.percentage}%, which is below recommended threshold of ${attendanceThreshold}%`,
+            percentage: m.percentage
+          });
+        }
+      }
+    });
+
+    return list;
+  }, [studentMetrics, alertFilterActiveOnly, activeSectionId, sections, dismissedAlerts, attendanceThreshold]);
+
+  const activeConsecAlertsCount = activeAlerts.filter(a => a.type === 'consecutive').length;
+  const activeAtRiskAlertsCount = activeAlerts.filter(a => a.type === 'threshold').length;
+  const totalActiveAlertsCount = activeAlerts.length;
 
   if (!currentUser) {
     return (
@@ -825,6 +1096,29 @@ export default function App() {
 
             <div className="w-px h-6 bg-slate-100 hidden sm:block"></div>
 
+            {/* Academic coaching & alerts notification toggle */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAlertsBarExpanded(prev => !prev)}
+                className={`relative p-2 rounded-xl border transition-all duration-150 flex items-center justify-center cursor-pointer ${
+                  alertsBarExpanded
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800'
+                }`}
+                title={`${alertsBarExpanded ? 'Collapse' : 'Expand'} Alerts Center`}
+              >
+                <Bell className={`w-4 h-4 ${totalActiveAlertsCount > 0 ? 'animate-pulse' : ''}`} />
+                {totalActiveAlertsCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-600 px-1 text-[8px] font-black text-white leading-none shadow-sm">
+                    {totalActiveAlertsCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            <div className="w-px h-6 bg-slate-100 hidden sm:block"></div>
+
             {/* Profile Avatar Badge with Secure Logout Trigger */}
             <div className="flex items-center gap-3 bg-indigo-50/45 hover:bg-indigo-50 border border-indigo-100/50 pl-2 pr-3.5 py-1.5 rounded-2xl transition duration-150">
               <div className="w-7 h-7 rounded-lg bg-indigo-650 text-white font-black flex items-center justify-center text-xs shadow-xs capitalize">
@@ -862,6 +1156,201 @@ export default function App() {
 
       {/* 2. MAIN WORKSPACE */}
       <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 grid grid-cols-1 md:grid-cols-12 gap-8">
+        
+        {/* ACADEMIC COACHING & SYSTEM ALERTS REPOSITORY */}
+        <div className="col-span-full">
+          <AnimatePresence initial={false}>
+            {alertsBarExpanded && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 mb-2 space-y-4">
+                  {/* Alert Panel Header with configuration filters */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100 select-none">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 bg-rose-50 text-rose-650 rounded-xl">
+                        <Bell className="w-5 h-5 text-rose-600 animate-pulse" />
+                      </div>
+                      <div>
+                        <h2 className="text-xs font-black text-slate-800 uppercase tracking-widest font-display flex items-center gap-2">
+                          <span>Academic Coaching & Alert Center</span>
+                          {totalActiveAlertsCount > 0 && (
+                            <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-black lowercase shrink-0 animate-bounce">
+                              {totalActiveAlertsCount} unresolved warnings
+                            </span>
+                          )}
+                        </h2>
+                        <p className="text-[10px] text-slate-400 font-bold">Automated indicators to trace and check students requiring counseling or check-ins</p>
+                      </div>
+                    </div>
+
+                    {/* Integrated controls drawer */}
+                    <div className="flex items-center flex-wrap gap-2 text-xs">
+                      {/* Active level checkbox filter */}
+                      <button
+                        type="button"
+                        onClick={() => setAlertFilterActiveOnly(prev => !prev)}
+                        className={`px-3 py-1.5 rounded-xl text-[10px] font-extrabold border transition cursor-pointer select-none ${
+                          alertFilterActiveOnly
+                            ? 'bg-rose-50 border-rose-200 text-rose-700'
+                            : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        {alertFilterActiveOnly ? 'Active Level Only ⚡' : 'All Roster Groups'}
+                      </button>
+
+                      {/* Threshold rate settings slider/input */}
+                      <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-bold text-slate-500">
+                        <Sliders className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Limit: <strong className="text-slate-800 font-black">{attendanceThreshold}%</strong></span>
+                        <div className="flex gap-0.5 ml-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setAttendanceThreshold(prev => Math.max(50, prev - 5))}
+                            className="w-5 h-5 flex items-center justify-center bg-white hover:bg-slate-100 border border-slate-200 rounded-md font-black cursor-pointer text-[10px]"
+                            title="Lower Warning Threshold"
+                          >
+                            -
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAttendanceThreshold(prev => Math.min(100, prev + 5))}
+                            className="w-5 h-5 flex items-center justify-center bg-white hover:bg-slate-100 border border-slate-200 rounded-md font-black cursor-pointer text-[10px]"
+                            title="Raise Warning Threshold"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Reset snoozed alerts block */}
+                      {dismissedAlerts.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleRestoreAlerts}
+                          className="px-2.5 py-1.5 bg-indigo-50 border border-indigo-150 rounded-xl text-[10px] font-black text-indigo-750 hover:bg-indigo-100 cursor-pointer transition select-none"
+                        >
+                          Restore ({dismissedAlerts.length})
+                        </button>
+                      )}
+
+                      {/* Hide center chevron */}
+                      <button
+                        type="button"
+                        onClick={() => setAlertsBarExpanded(false)}
+                        className="p-1 px-1.5 bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-750 border border-slate-200 rounded-xl cursor-pointer transition flex items-center justify-center"
+                        title="Hide Warning Center details"
+                      >
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Body list of warnings */}
+                  {activeAlerts.length === 0 ? (
+                    <div className="py-8 text-center bg-slate-50/55 rounded-xl border border-dashed border-slate-150 flex flex-col items-center justify-center gap-2 select-none">
+                      <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                        <Check className="w-4 h-4" />
+                      </div>
+                      <p className="text-[11px] font-extrabold text-slate-650 leading-none">All Academic Rosters Healthy!</p>
+                      <p className="text-[10px] text-slate-400 font-bold max-w-sm leading-relaxed">No students are currently matching consecutive absence thresholds or falling below the {attendanceThreshold}% boundary limit.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[340px] overflow-y-auto pr-1">
+                      {activeAlerts.map(alert => {
+                        const isConsecutive = alert.type === 'consecutive';
+                        
+                        return (
+                          <div
+                            key={alert.id}
+                            className={`p-3 rounded-xl border flex flex-col justify-between gap-3 font-medium text-xs transition duration-150 hover:shadow-xs group/warn ${
+                              isConsecutive
+                                ? 'bg-rose-50/45 border-rose-100/90 hover:border-rose-250 text-slate-700'
+                                : 'bg-amber-50/45 border-amber-100/95 hover:border-amber-250 text-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2.5">
+                              <div className="space-y-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap leading-none">
+                                  <span className="font-extrabold font-display text-slate-900 group-hover/warn:text-indigo-650 transition-colors uppercase tracking-tight">
+                                    {alert.student.name}
+                                  </span>
+                                  <span className="text-[9px] bg-slate-200/80 border border-slate-250/20 text-slate-600 rounded px-1.5 py-0.5 font-bold uppercase tracking-wider">
+                                    Class: {alert.sectionName}
+                                  </span>
+                                  {isConsecutive ? (
+                                    <span className="text-[9px] font-black bg-rose-600 text-white rounded px-1.5 py-0.5 uppercase tracking-wide">
+                                      Critical Consecutive Absence
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] font-black bg-amber-500 text-white rounded px-1.5 py-0.5 uppercase tracking-wide">
+                                      Under Attendance Limit
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-slate-500 font-medium text-[10.5px] leading-relaxed">
+                                  {alert.message}
+                                </p>
+                                
+                                {isConsecutive && alert.dates && (
+                                  <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap text-[9.5px]">
+                                    <span className="text-rose-700 font-bold">Unexcused consecutive dates:</span>
+                                    {alert.dates.map(date => (
+                                      <span key={date} className="px-1.5 py-0.5 bg-rose-100 text-rose-800 border border-rose-200 rounded font-mono font-extrabold">
+                                        {new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Dismiss action trigger button */}
+                              <button
+                                type="button"
+                                onClick={() => handleDismissAlert(alert.id)}
+                                className="p-1 rounded-lg hover:bg-slate-200/60 font-black text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0 border-none bg-transparent"
+                                title="Dismiss/Snooze Alert"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {/* Coach intervention actions footer trigger */}
+                            <div className="flex items-center justify-between border-t border-slate-100/50 pt-2 bg-transparent select-none">
+                              <span className="text-[9.5px] text-slate-400 font-bold italic">Requires counselor intervention</span>
+                              
+                              <button
+                                type="button"
+                                onClick={() => setDraftEmailContext({
+                                  studentName: alert.student.name,
+                                  sectionName: alert.sectionName,
+                                  type: alert.type,
+                                  dates: alert.dates,
+                                  percentage: alert.percentage
+                                })}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1 text-[10px] font-extrabold rounded-lg shadow-3xs cursor-pointer transition hover:scale-102 hover:shadow-2xs leading-none border ${
+                                  isConsecutive
+                                    ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600'
+                                    : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500'
+                                }`}
+                              >
+                                <Mail className="w-3 h-3" />
+                                <span>Coaching Outreach</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
         
         {/* LEFT: Section Navigation Sidebar */}
         <aside className="md:col-span-3 flex flex-col gap-4">
@@ -1300,6 +1789,9 @@ export default function App() {
                   holidays={holidays}
                   onToggleHoliday={handleToggleHoliday}
                   onImportGlobalHolidays={handleImportGlobalHolidays}
+                  canceledClasses={canceledClasses}
+                  onToggleCanceledClass={handleToggleCanceledClass}
+                  onUpdateCanceledNote={handleUpdateCanceledNote}
                 />
               )}
 
@@ -1314,6 +1806,8 @@ export default function App() {
                   submittedDates={submittedDates}
                   holidays={holidays}
                   onToggleHoliday={handleToggleHoliday}
+                  canceledClasses={canceledClasses}
+                  attendanceThreshold={attendanceThreshold}
                 />
               )}
 
@@ -1325,6 +1819,8 @@ export default function App() {
                   submittedDates={submittedDates}
                   sections={sections}
                   holidays={holidays}
+                  canceledClasses={canceledClasses}
+                  attendanceThreshold={attendanceThreshold}
                 />
               )}
 
@@ -1339,6 +1835,8 @@ export default function App() {
                   onAddIntake={handleAddIntake}
                   onRenameIntake={handleRenameIntake}
                   onDeleteIntake={handleDeleteIntake}
+                  canceledClasses={canceledClasses}
+                  attendanceThreshold={attendanceThreshold}
                 />
               )}
 
@@ -1367,6 +1865,7 @@ export default function App() {
                   attendanceNotes={attendanceNotes}
                   holidays={holidays}
                   onToggleHoliday={handleToggleHoliday}
+                  canceledClasses={canceledClasses}
                 />
               )}
 
@@ -1381,6 +1880,7 @@ export default function App() {
                   onSubmitDate={handleSubmitDate}
                   holidays={holidays}
                   onSelectSectionId={setActiveSectionId}
+                  canceledClasses={canceledClasses}
                 />
               )}
             </div>
@@ -1851,6 +2351,108 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* PROFESSIONAL OUTREACH COACHING EMAIL MODAL */}
+      <AnimatePresence>
+        {draftEmailContext && (
+          <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl border border-slate-100 w-full max-w-lg overflow-hidden"
+            >
+              <div className="px-6 py-5 bg-gradient-to-r from-indigo-50 to-indigo-100/50 border-b border-indigo-100 flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-50 text-indigo-700 rounded-xl">
+                  <Mail className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-950 font-display">Student Coaching Outreach Draft</h3>
+                  <p className="text-[10px] text-slate-500 font-semibold font-sans">Review outreach draft template for {draftEmailContext.studentName}</p>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="space-y-1 select-none">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Recipient Name</span>
+                  <div className="px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-semibold text-slate-705 text-slate-700">
+                    {draftEmailContext.studentName} &middot; Class Group: {draftEmailContext.sectionName}
+                  </div>
+                </div>
+
+                <div className="space-y-1 select-none">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Subject Line</span>
+                  <div className="px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-semibold text-slate-705 text-slate-700">
+                    {draftEmailContext.type === 'consecutive' 
+                      ? `Attendance inquiry - ${draftEmailContext.studentName}`
+                      : `Attendance progress check-in - ${draftEmailContext.studentName}`}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center select-none">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Email Body Draft</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const bodyText = getEmailBody();
+                        navigator.clipboard.writeText(bodyText);
+                        alert(`Copied outreach draft for ${draftEmailContext.studentName} up to clipboard!`);
+                      }}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-805 font-bold cursor-pointer hover:underline"
+                    >
+                      Copy Draft Text
+                    </button>
+                  </div>
+                  <textarea
+                    readOnly
+                    value={getEmailBody()}
+                    className="w-full h-44 px-3.5 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-700 font-medium focus:outline-none leading-relaxed resize-none font-sans"
+                  />
+                </div>
+              </div>
+
+              <div className="px-6 py-4.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setDraftEmailContext(null)}
+                  className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 text-xs font-semibold rounded-xl cursor-pointer transition-colors"
+                >
+                  Close Drawer
+                </button>
+                <a
+                  href={`mailto:student-email@school.com?subject=${encodeURIComponent(
+                    draftEmailContext.type === 'consecutive'
+                      ? `Attendance inquiry - ${draftEmailContext.studentName}`
+                      : `Attendance rate progress check-in - ${draftEmailContext.studentName}`
+                  )}&body=${encodeURIComponent(getEmailBody())}`}
+                  className="px-4 py-2 bg-indigo-650 hover:bg-indigo-700 text-white text-xs font-black rounded-xl cursor-pointer transition-all shadow-sm inline-flex items-center gap-1.5"
+                >
+                  <Mail className="w-3.5 h-3.5 text-white" />
+                  <span>Launch Mail App</span>
+                </a>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
+
+  // Email outreach helper
+  function getEmailBody() {
+    if (!draftEmailContext) return '';
+    const name = draftEmailContext.studentName;
+    const groupName = draftEmailContext.sectionName;
+    const author = currentUser ? currentUser.fullName || 'Academic Officer' : 'Academic Officer';
+
+    if (draftEmailContext.type === 'consecutive') {
+      const datesFormatted = draftEmailContext.dates 
+        ? draftEmailContext.dates.map(d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })).join(', ')
+        : '';
+      return `Hi ${name},\n\nI hope you are doing well.\n\nI am reaching out because we noticed that you missed multiple consecutive class sessions (specifically on: ${datesFormatted}) in your class group "${groupName}".\n\nWe want to ensure you are fully in loop and supported—please let me know if everything is alright or if you need any assistance catching up on recent coursework.\n\nBest regards,\n\n${author}`;
+    } else {
+      return `Hi ${name},\n\nI hope you are doing well.\n\nI am writing to check in regarding your class attendance in "${groupName}". Currently, your overall attendance rate is at ${draftEmailContext.percentage}%, which is under our recommended class guideline of ${attendanceThreshold}%.\n\nWe want to make sure you have all the resources you need to succeed. Let's find some time soon to connect and review how we can support you.\n\nBest regards,\n\n${author}`;
+    }
+  }
 }

@@ -16,7 +16,8 @@ import {
   HelpCircle,
   BookOpen,
   CalendarDays,
-  FileText
+  FileText,
+  CalendarX
 } from 'lucide-react';
 import { Student, Section, AttendanceMap, AttendanceStatus, AttendanceNotesMap } from '../types';
 
@@ -27,6 +28,7 @@ interface StudentCalendarViewProps {
   attendanceNotes: AttendanceNotesMap;
   holidays: Record<string, string[]>;
   onToggleHoliday: (date: string, sectionId: string) => void;
+  canceledClasses: Record<string, Record<string, string>>;
 }
 
 export default function StudentCalendarView({
@@ -35,7 +37,8 @@ export default function StudentCalendarView({
   attendance,
   attendanceNotes,
   holidays,
-  onToggleHoliday
+  onToggleHoliday,
+  canceledClasses
 }: StudentCalendarViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
@@ -123,17 +126,21 @@ export default function StudentCalendarView({
 
   // Calculate dynamic attendance stats for any student / month combo
   const getStudentStatsForMonth = (studentId: string, monthIdx: number, yearNum: number) => {
-    if (!studentId) return { presents: 0, absents: 0, holidaysCount: 0, totalMarkedDays: 0, rate: null };
+    if (!studentId) return { presents: 0, absents: 0, holidaysCount: 0, canceledCount: 0, totalMarkedDays: 0, rate: null };
 
     // Get cells of ONLY the current month
     const currentMonthDays = calendarCells.filter(cell => cell.isCurrentMonth);
+    const sectionCanceled = canceledClasses[activeSection.id] || {};
     let presents = 0;
     let absents = 0;
     let holidaysCount = 0;
+    let canceledCount = 0;
 
     currentMonthDays.forEach(cell => {
       if (activeSectionHolidays.includes(cell.dateString)) {
         holidaysCount++;
+      } else if (sectionCanceled[cell.dateString] !== undefined) {
+        canceledCount++;
       } else {
         const status = attendance[cell.dateString]?.[studentId];
         if (status === 'present') presents++;
@@ -148,6 +155,7 @@ export default function StudentCalendarView({
       presents,
       absents,
       holidaysCount,
+      canceledCount,
       totalMarkedDays,
       rate
     };
@@ -156,7 +164,7 @@ export default function StudentCalendarView({
   // Stats for the currently selected student
   const selectedStudentStats = useMemo(() => {
     return getStudentStatsForMonth(selectedStudentId, currentMonth, currentYear);
-  }, [selectedStudentId, currentMonth, currentYear, calendarCells, attendance, activeSectionHolidays]);
+  }, [selectedStudentId, currentMonth, currentYear, calendarCells, attendance, activeSectionHolidays, canceledClasses, activeSection.id]);
 
   // Student list search filter
   const filteredStudents = useMemo(() => {
@@ -473,10 +481,17 @@ export default function StudentCalendarView({
                     const status = attendance[cell.dateString]?.[selectedStudentId] || '';
                     const hasMarked = status !== '';
 
+                    const sectionCanceled = canceledClasses[activeSection.id] || {};
+                    const cancelNote = sectionCanceled[cell.dateString];
+                    const isCanceled = typeof cancelNote === 'string';
+
                     let blockClass = 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-100';
                     let statusLabel = '';
 
-                    if (isHoliday) {
+                    if (isCanceled) {
+                      blockClass = 'bg-rose-50/50 border border-dashed border-rose-300 text-rose-800';
+                      statusLabel = 'canceled';
+                    } else if (isHoliday) {
                       blockClass = 'bg-amber-50/60 border-amber-200/60 text-amber-800';
                       statusLabel = 'holiday';
                     } else if (status === 'present') {
@@ -504,7 +519,7 @@ export default function StudentCalendarView({
                         }}
                         title={
                           cell.isCurrentMonth 
-                            ? `${cell.dateString} - ${isHoliday ? 'Holiday' : status ? status : 'No attendance record'}. Click to toggle Holiday.`
+                            ? `${cell.dateString} - ${isCanceled ? `Canceled: "${cancelNote}"` : isHoliday ? 'Holiday' : status ? status : 'No attendance record'}. Click to toggle Holiday.`
                             : ''
                         }
                         className={`min-h-[60px] sm:min-h-[70px] p-1 rounded-xl flex flex-col justify-between transition-all relative select-none cursor-pointer group border ${blockClass} ${
@@ -519,7 +534,9 @@ export default function StudentCalendarView({
                           {/* Inner status marker icon for rich visualizations */}
                           {cell.isCurrentMonth && (
                             <div className="opacity-80 scale-90 sm:scale-100">
-                              {isHoliday ? (
+                              {isCanceled ? (
+                                <CalendarX className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
+                              ) : isHoliday ? (
                                 <Coffee className="w-3.5 h-3.5 text-amber-500" />
                               ) : status === 'present' ? (
                                 <span className="w-4 h-4 bg-emerald-500 text-white rounded-full flex items-center justify-center text-[8px] font-bold shadow-2xs">P</span>
@@ -559,11 +576,15 @@ export default function StudentCalendarView({
                       <span>Withdrawn</span>
                     </div>
                     <div className="flex items-center gap-1.5">
+                      <CalendarX className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
+                      <span>Canceled</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
                       <Coffee className="w-3.5 h-3.5 text-amber-500" />
                       <span>Holiday</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="w-3.5 h-1 bg-slate-205 bg-slate-200 block rounded" />
+                      <span className="w-3.5 h-1 bg-slate-200 block rounded" />
                       <span>No Record</span>
                     </div>
                   </div>

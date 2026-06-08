@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -14,7 +14,10 @@ import {
   CheckSquare,
   AlertCircle,
   Users,
-  Coffee
+  Coffee,
+  ArrowUp,
+  ArrowDown,
+  CalendarX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Student, Section, AttendanceMap, AttendanceStatus } from '../types';
@@ -29,6 +32,8 @@ interface WeeklyGridProps {
   submittedDates: Record<string, string[]>;
   holidays: Record<string, string[]>;
   onToggleHoliday: (date: string, sectionId: string) => void;
+  canceledClasses: Record<string, Record<string, string>>;
+  attendanceThreshold?: number;
 }
 
 // Format Date object to YYYY-MM-DD
@@ -70,7 +75,9 @@ export default function WeeklyGrid({
   onClearAttendance,
   submittedDates,
   holidays,
-  onToggleHoliday
+  onToggleHoliday,
+  canceledClasses,
+  attendanceThreshold = 75
 }: WeeklyGridProps) {
   // We base our local active week starting from current week's Monday
   const [weekStart, setWeekStart] = useState<Date>(() => getMondayOfDate(new Date('2026-05-31')));
@@ -133,10 +140,71 @@ export default function WeeklyGrid({
     return holidays[activeSection.id] || [];
   }, [holidays, activeSection.id]);
 
-  // Filter students for active section
+  const [isReorderMode, setIsReorderMode] = useState(false);
+  const [customStudentIdsOrder, setCustomStudentIdsOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`attendance_student_order_${activeSection.id}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Keep reorder state in sync with activeSection.id
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`attendance_student_order_${activeSection.id}`);
+      setCustomStudentIdsOrder(saved ? JSON.parse(saved) : []);
+    } catch {
+      setCustomStudentIdsOrder([]);
+    }
+  }, [activeSection.id]);
+
+  const handleMoveStudent = (studentId: string, direction: 'up' | 'down') => {
+    const filtered = students.filter(s => s.sectionId === activeSection.id);
+    let resolvedOrder = [...customStudentIdsOrder];
+
+    // Ensure all current section students are in the resolvedOrder list
+    filtered.forEach(s => {
+      if (!resolvedOrder.includes(s.id)) {
+        resolvedOrder.push(s.id);
+      }
+    });
+
+    // Keep only the active section students in our resolved list
+    const filteredIds = filtered.map(s => s.id);
+    resolvedOrder = resolvedOrder.filter(id => filteredIds.includes(id));
+
+    const index = resolvedOrder.indexOf(studentId);
+    if (index === -1) return;
+
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= resolvedOrder.length) return;
+
+    // Swap
+    const temp = resolvedOrder[index];
+    resolvedOrder[index] = resolvedOrder[newIndex];
+    resolvedOrder[newIndex] = temp;
+
+    setCustomStudentIdsOrder(resolvedOrder);
+    localStorage.setItem(`attendance_student_order_${activeSection.id}`, JSON.stringify(resolvedOrder));
+  };
+
+  // Filter and sort students for active section
   const sectionStudents = useMemo(() => {
-    return students.filter(s => s.sectionId === activeSection.id);
-  }, [students, activeSection.id]);
+    const filtered = students.filter(s => s.sectionId === activeSection.id);
+    if (customStudentIdsOrder.length === 0) return filtered;
+
+    // Sort based on customStudentIdsOrder index
+    const sorted = [...filtered].sort((a, b) => {
+      let idxA = customStudentIdsOrder.indexOf(a.id);
+      let idxB = customStudentIdsOrder.indexOf(b.id);
+      if (idxA === -1) idxA = 9999;
+      if (idxB === -1) idxB = 9999;
+      return idxA - idxB;
+    });
+    return sorted;
+  }, [students, activeSection.id, customStudentIdsOrder]);
 
   // Generate week dates (Monday ... Sunday, filtered according to weekend toggles)
   const weekDates = useMemo(() => {
@@ -242,8 +310,9 @@ export default function WeeklyGrid({
 
       weekDates.forEach(d => {
         const dateStr = formatDateKey(d);
-        if (sectionHolidays.includes(dateStr)) {
-          return; // Skip holiday calculations for all students
+        const sectionCanceled = canceledClasses[activeSection.id] || {};
+        if (sectionHolidays.includes(dateStr) || sectionCanceled[dateStr] !== undefined) {
+          return; // Skip holiday and canceled calculations for all students
         }
         const st = attendance[dateStr]?.[student.id];
         if (st === 'present') {
@@ -389,13 +458,50 @@ export default function WeeklyGrid({
       <div className="bg-white rounded-2xl border border-slate-100 shadow-xs overflow-hidden">
         
         {/* Board Header & Info */}
-        <div className="px-6 py-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider font-display flex items-center gap-1.5">
-              <span>Weekly Mark-Sheet</span>
-            </h3>
-            <p className="text-xs text-slate-400 font-medium">
-              Click individual cell circles to rotate states: <strong className="text-emerald-500">Present (🟢)</strong> → <strong className="text-rose-500">Absent (🔴)</strong> → <strong className="text-slate-400">Unrecorded (⚪)</strong>
+        <div className="px-6 py-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1.5 flex-1 animate-fadeIn">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider font-display flex items-center gap-1.5">
+                <span>Weekly Mark-Sheet</span>
+              </h3>
+              
+              <div className="flex items-center gap-1.5 ml-1">
+                <button
+                  type="button"
+                  onClick={() => setIsReorderMode(prev => !prev)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wide border cursor-pointer select-none transition-all shadow-3xs duration-150 ${
+                    isReorderMode 
+                      ? 'bg-indigo-600 text-white border-indigo-500 hover:bg-indigo-700' 
+                      : 'bg-indigo-50 hover:bg-indigo-100/80 text-indigo-700 border-indigo-100/60'
+                  }`}
+                  title="Manually sort students in the list using Up/Down buttons"
+                >
+                  <SlidersHorizontal className="w-2.5 h-2.5" />
+                  <span>{isReorderMode ? 'Done Sorting' : 'Rearrange List'}</span>
+                </button>
+                {isReorderMode && customStudentIdsOrder.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomStudentIdsOrder([]);
+                      localStorage.removeItem(`attendance_student_order_${activeSection.id}`);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[10px] font-black uppercase text-slate-500 rounded-lg cursor-pointer transition select-none shadow-3xs"
+                    title="Reset custom student arrangement back to original list"
+                  >
+                    <span>Reset Order</span>
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 font-medium leading-normal">
+              {isReorderMode ? (
+                <span className="text-indigo-600 font-semibold flex items-center gap-1">
+                  <span>★ Rearrange mode active: click ▲ or ▼ next to student names to move them up or down.</span>
+                </span>
+              ) : (
+                <span>Click individual cell circles to rotate states: <strong className="text-emerald-500">Present (🟢)</strong> → <strong className="text-rose-500">Absent (🔴)</strong> → <strong className="text-slate-400">Unrecorded (⚪)</strong></span>
+              )}
             </p>
           </div>
           
@@ -438,9 +544,7 @@ export default function WeeklyGrid({
                   {/* Sticky student list column header */}
                   <th className="sticky left-0 bg-slate-50 z-20 pl-6 pr-4 py-3.5 text-xs font-black text-slate-500 uppercase tracking-widest border-r border-slate-150/60 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.03)] w-[220px]">
                     Student Name
-                  </th>
-                  
-                  {/* Monday to Sunday day headers */}
+                  </th>                  {/* Monday to Sunday day headers */}
                   {weekDates.map((dateObj, idx) => {
                     const dateStr = formatDateKey(dateObj);
                     const formattedDisplayDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -448,22 +552,40 @@ export default function WeeklyGrid({
                     const isDayHoliday = sectionHolidays.includes(dateStr);
                     const isDayMenuOpen = activeMenuDay === dateStr;
 
+                    const sectionCanceled = canceledClasses[activeSection.id] || {};
+                    const cancelReason = sectionCanceled[dateStr];
+                    const isDayCanceled = typeof cancelReason === 'string';
+
                     return (
                       <th
                         key={idx}
                         className={`relative px-3 py-3.5 text-center text-xs border-r border-slate-100 w-[110px] transition-colors duration-150 ${
-                          isDayHoliday ? 'bg-amber-50/25 border-t-4 border-t-amber-400' : ''
+                          isDayCanceled 
+                            ? 'bg-rose-50/20 border-t-4 border-t-rose-400' 
+                            : isDayHoliday 
+                              ? 'bg-amber-50/25 border-t-4 border-t-amber-400' 
+                              : ''
                         }`}
+                        title={isDayCanceled ? `Canceled: "${cancelReason}"` : isDayHoliday ? 'School Holiday' : ''}
                       >
                         <div className="space-y-1 select-none flex flex-col items-center">
-                          <p className={`font-extrabold tracking-wide flex items-center justify-center gap-1 ${isDayHoliday ? 'text-amber-800' : 'text-slate-800'}`}>
-                            {isDayHoliday && <Coffee className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />}
+                          <p className={`font-extrabold tracking-wide flex items-center justify-center gap-1 ${isDayCanceled ? 'text-rose-800' : isDayHoliday ? 'text-amber-800' : 'text-slate-800'}`}>
+                            {isDayCanceled ? (
+                              <CalendarX className="w-3.5 h-3.5 text-rose-550 animate-pulse shrink-0" />
+                            ) : isDayHoliday ? (
+                              <Coffee className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />
+                            ) : null}
                             {dateObj.toLocaleDateString('en-US', { weekday: 'short' })}
                           </p>
-                          <p className={`font-mono text-[10px] font-black ${isDayHoliday ? 'text-amber-600/70' : 'text-slate-400'}`}>
+                          <p className={`font-mono text-[10px] font-black ${isDayCanceled ? 'text-rose-600/70' : isDayHoliday ? 'text-amber-600/70' : 'text-slate-400'}`}>
                             {formattedDisplayDate}
                           </p>
-                          {isDayHoliday && (
+                          {isDayCanceled && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-rose-50 border border-rose-200 text-rose-700 text-[8px] font-black rounded-md tracking-wider text-center select-none" title={`Canceled: ${cancelReason}`}>
+                              CANCELED
+                            </span>
+                          )}
+                          {isDayHoliday && !isDayCanceled && (
                             <button
                               type="button"
                               onClick={() => {
@@ -477,7 +599,7 @@ export default function WeeklyGrid({
                               <span>HOLIDAY</span>
                             </button>
                           )}
-                          {isSubmitted && !isDayHoliday && (
+                          {isSubmitted && !isDayHoliday && !isDayCanceled && (
                             <span className="inline-block scale-90 px-1.5 py-0.2 bg-emerald-50 text-emerald-700 text-[8px] font-black rounded border border-emerald-150">
                               Locked
                             </span>
@@ -488,15 +610,18 @@ export default function WeeklyGrid({
                         <div className="mt-2.5 flex items-center justify-center gap-1">
                           <button
                             type="button"
+                            disabled={isDayCanceled}
                             onClick={() => setActiveMenuDay(isDayMenuOpen ? null : dateStr)}
-                            className="text-[9px] font-black text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150/40 px-2 py-0.5 rounded cursor-pointer transition select-none flex items-center gap-0.5"
+                            className={`text-[9px] font-black text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150/40 px-2 py-0.5 rounded cursor-pointer transition select-none flex items-center gap-0.5 ${
+                              isDayCanceled ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''
+                            }`}
                           >
                             <span>Set All</span>
                             <span className="text-[7px]">▼</span>
                           </button>
 
                           {/* Float Custom Dropdown modal layout */}
-                          {isDayMenuOpen && (
+                          {isDayMenuOpen && !isDayCanceled && (
                             <>
                               <div className="fixed inset-0 z-30" onClick={() => setActiveMenuDay(null)} />
                               <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 bg-white border border-slate-150 rounded-xl shadow-lg p-2.5 z-40 w-44 space-y-1.5">
@@ -568,7 +693,7 @@ export default function WeeklyGrid({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs text-slate-600 font-medium">
-                {sectionStudents.map((student) => {
+                {sectionStudents.map((student, studentIndex) => {
                   const statsObj = studentWeekProgressList.find(s => s.studentId === student.id);
                   const accuracyValue = statsObj?.percentage;
 
@@ -578,6 +703,42 @@ export default function WeeklyGrid({
                       <td className="sticky left-0 bg-white z-10 pl-6 pr-4 py-3.5 font-bold text-slate-700 truncate border-r border-slate-100/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.03)] group-hover:bg-slate-50">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
+                            {isReorderMode && (
+                              <div className="inline-flex items-center gap-0.5 shrink-0 bg-slate-100 rounded-md p-0.5 select-none animate-fadeIn mr-1">
+                                <button
+                                  type="button"
+                                  disabled={studentIndex === 0}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleMoveStudent(student.id, 'up');
+                                  }}
+                                  className={`p-0.5 rounded transition cursor-pointer ${
+                                    studentIndex === 0 
+                                      ? 'text-slate-300 cursor-not-allowed opacity-40' 
+                                      : 'text-indigo-650 hover:bg-white active:scale-90 hover:shadow-3xs'
+                                  }`}
+                                  title="Move student up"
+                                >
+                                  <ArrowUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={studentIndex === sectionStudents.length - 1}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleMoveStudent(student.id, 'down');
+                                  }}
+                                  className={`p-0.5 rounded transition cursor-pointer ${
+                                    studentIndex === sectionStudents.length - 1
+                                      ? 'text-slate-300 cursor-not-allowed opacity-40' 
+                                      : 'text-indigo-650 hover:bg-white active:scale-90 hover:shadow-3xs'
+                                  }`}
+                                  title="Move student down"
+                                >
+                                  <ArrowDown className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
                             <p className={`font-semibold text-xs truncate max-w-[140px] ${student.isWithdrawn ? 'text-slate-400 line-through decoration-rose-300' : 'text-slate-800'}`} title={student.name}>
                               {student.name}
                             </p>
@@ -616,11 +777,21 @@ export default function WeeklyGrid({
                         const isHovered = hoveredCell?.studentId === student.id && hoveredCell?.dateStr === dateStr;
                         const isDayHoliday = sectionHolidays.includes(dateStr);
 
+                        const sectionCanceled = canceledClasses[activeSection.id] || {};
+                        const cancelReason = sectionCanceled[dateStr];
+                        const isDayCanceled = typeof cancelReason === 'string';
+
+                        const isInactive = isDayHoliday || isDayCanceled;
+
                         let colorClass = 'bg-slate-50 border-slate-200 border-dashed hover:border-slate-450 hover:bg-slate-100/50';
                         let dotContent = null;
                         let cellTitle = 'Click to mark as Present';
 
-                        if (isDayHoliday) {
+                        if (isDayCanceled) {
+                          colorClass = 'bg-rose-50 border border-dashed border-rose-300 text-rose-800 cursor-not-allowed';
+                          dotContent = <CalendarX className="w-5 h-5 text-rose-500 animate-pulse shrink-0" />;
+                          cellTitle = `Canceled Class: "${cancelReason}"\nExcluded from Calculations`;
+                        } else if (isDayHoliday) {
                           colorClass = 'bg-slate-100/80 border-slate-200 text-slate-400 cursor-not-allowed';
                           dotContent = <Coffee className="w-5 h-5 text-amber-500/80 shrink-0" />;
                           cellTitle = 'Holiday - Excluded from Calculations';
@@ -641,24 +812,24 @@ export default function WeeklyGrid({
                         return (
                           <td
                             key={idx}
-                            className={`px-3 py-3.5 border-r border-slate-100 text-center align-middle transition-colors ${isDayHoliday ? 'bg-slate-100/30' : ''}`}
-                            onMouseEnter={isDayHoliday ? undefined : () => setHoveredCell({ studentId: student.id, dateStr })}
-                            onMouseLeave={isDayHoliday ? undefined : () => setHoveredCell(null)}
+                            className={`px-3 py-3.5 border-r border-slate-100 text-center align-middle transition-colors ${isInactive ? 'bg-slate-100/30' : ''}`}
+                            onMouseEnter={isInactive ? undefined : () => setHoveredCell({ studentId: student.id, dateStr })}
+                            onMouseLeave={isInactive ? undefined : () => setHoveredCell(null)}
                           >
                             <div className="flex justify-center items-center">
                               <button
                                 type="button"
-                                onClick={isDayHoliday ? undefined : () => handleCellClick(student.id, dateStr)}
+                                onClick={isInactive ? undefined : () => handleCellClick(student.id, dateStr)}
                                 className={`w-11.5 h-11.5 w-[46px] h-[46px] rounded-full border-2.5 flex items-center justify-center transition-all duration-200 select-none relative ${
-                                  isDayHoliday 
+                                  isInactive 
                                     ? colorClass 
                                     : `cursor-pointer hover:scale-108 active:scale-90 ${colorClass}`
                                 }`}
                                 title={cellTitle}
-                                disabled={isDayHoliday}
+                                disabled={isInactive}
                               >
                                 {dotContent}
-                                {isHovered && !status && !isDayHoliday && (
+                                {isHovered && !status && !isInactive && (
                                   <span className="text-sm font-black text-indigo-500 opacity-60 font-mono animate-pulse">
                                     +
                                   </span>
@@ -673,7 +844,7 @@ export default function WeeklyGrid({
                       <td className="px-5 py-3.5 text-center font-mono align-middle">
                         <div className="space-y-1">
                           <p className={`font-black text-xs ${
-                            accuracyValue !== null && accuracyValue < 75 
+                            accuracyValue !== null && accuracyValue < attendanceThreshold 
                               ? 'text-rose-600' 
                               : accuracyValue === 100 
                               ? 'text-amber-600'

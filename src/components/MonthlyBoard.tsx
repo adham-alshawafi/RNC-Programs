@@ -18,7 +18,8 @@ import {
   SlidersHorizontal, 
   RotateCcw,
   Coffee,
-  Check
+  Check,
+  CalendarX
 } from 'lucide-react';
 import { Student, Section, AttendanceMap, AttendanceStatus } from '../types';
 
@@ -29,6 +30,8 @@ interface MonthlyBoardProps {
   submittedDates: Record<string, string[]>;
   sections: Section[];
   holidays: Record<string, string[]>;
+  canceledClasses: Record<string, Record<string, string>>;
+  attendanceThreshold?: number;
 }
 
 // Helper to format month strings
@@ -49,6 +52,8 @@ export default function MonthlyBoard({
   submittedDates,
   sections,
   holidays,
+  canceledClasses,
+  attendanceThreshold = 75,
 }: MonthlyBoardProps) {
   // Determine all months that have recorded dates or submitted dates, or fall back to default
   const availableMonths = useMemo(() => {
@@ -149,9 +154,14 @@ export default function MonthlyBoard({
   const monthlyCalculations = useMemo(() => {
     return targetStudents.map(student => {
       const studentHolidays = holidays[student.sectionId] || [];
+      const studentCanceled = canceledClasses[student.sectionId] || {};
       
-      // Filter month dates applicable to this student (e.g. not a holiday for their section)
-      const activeMonthDates = monthlyDates.filter(date => !studentHolidays.includes(date));
+      // Filter month dates applicable to this student (e.g. not a holiday or canceled for their section)
+      const activeMonthDates = monthlyDates.filter(date => {
+        const isHoliday = studentHolidays.includes(date);
+        const isCanceled = studentCanceled[date] !== undefined;
+        return !isHoliday && !isCanceled;
+      });
       const totalMonthDays = activeMonthDates.length;
 
       let presents = 0;
@@ -195,7 +205,7 @@ export default function MonthlyBoard({
 
       // 2. Performance Query
       if (performanceFilter === 'all') return true;
-      if (performanceFilter === 'at_risk') return item.percentage < 75 && item.totalDays > 0;
+      if (performanceFilter === 'at_risk') return item.percentage < attendanceThreshold && item.totalDays > 0;
       if (performanceFilter === 'perfect') return item.percentage === 100 && item.totalDays > 0;
       
       return true;
@@ -230,7 +240,7 @@ export default function MonthlyBoard({
       : 100;
 
     const perfectCount = validCalcs.filter(c => c.percentage === 100).length;
-    const warningCount = validCalcs.filter(c => c.percentage < 75).length;
+    const warningCount = validCalcs.filter(c => c.percentage < attendanceThreshold).length;
 
     // Detect Peak Attendance Day in the selected month
     let peakDay: string | null = null;
@@ -242,7 +252,8 @@ export default function MonthlyBoard({
 
       targetStudents.forEach(student => {
         const studentHolidays = holidays[student.sectionId] || [];
-        if (studentHolidays.includes(date)) return;
+        const studentCanceled = canceledClasses[student.sectionId] || {};
+        if (studentHolidays.includes(date) || studentCanceled[date] !== undefined) return;
 
         const status = attendance[date]?.[student.id];
         if (status) {
@@ -400,7 +411,7 @@ export default function MonthlyBoard({
               <span className="text-slate-300 text-sm">/</span>
               <span className="text-rose-500 flex items-center text-sm font-black">▲ {monthlySummary.warningCount}</span>
             </h3>
-            <p className="text-xxs text-slate-400">Perfect vs &lt;75% risk count</p>
+            <p className="text-xxs text-slate-400">Perfect vs &lt;{attendanceThreshold}% risk count</p>
           </div>
           <div className="p-3 bg-amber-50 text-amber-500 rounded-2xl">
             <Award className="w-5 h-5 text-amber-600" />
@@ -459,7 +470,7 @@ export default function MonthlyBoard({
                   className="w-full appearance-none bg-slate-50 border border-slate-200 hover:border-slate-350 text-slate-705 text-[11px] font-bold rounded-xl pl-3 pr-8 py-2 outline-none cursor-pointer transition focus:ring-1 focus:ring-indigo-500 shadow-3xs"
                 >
                   <option value="all">All ({monthlyCalculations.length})</option>
-                  <option value="at_risk">At-Risk Cases (Below 75%)</option>
+                  <option value="at_risk">At-Risk Cases (Below {attendanceThreshold}%)</option>
                   <option value="perfect">Perfect Records (100%)</option>
                 </select>
                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
@@ -580,7 +591,7 @@ export default function MonthlyBoard({
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
                 {sortedCalculations.map(({ student, presentCount, absentCount, percentage, totalDays }) => {
-                  const isWarning = percentage < 75 && totalDays > 0;
+                  const isWarning = percentage < attendanceThreshold && totalDays > 0;
                   const isGold = percentage === 100 && totalDays > 0;
 
                   return (
@@ -614,7 +625,7 @@ export default function MonthlyBoard({
                             {percentage}%
                           </span>
                           {isGold && <Award className="w-3.5 h-3.5 text-amber-500" title="Perfect Record!" />}
-                          {isWarning && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" title="At risk (Below 75%)" />}
+                          {isWarning && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" title={`At risk (Below ${attendanceThreshold}%)`} />}
                         </div>
                       </td>
 
@@ -629,17 +640,24 @@ export default function MonthlyBoard({
                       {monthlyDates.map(dateKey => {
                         const studentHolidays = holidays[student.sectionId] || [];
                         const isHoliday = studentHolidays.includes(dateKey);
+                        const studentCanceled = canceledClasses[student.sectionId] || {};
+                        const cancelReason = studentCanceled[dateKey];
+                        const isCanceled = typeof cancelReason === 'string';
                         const status: AttendanceStatus | undefined = attendance[dateKey]?.[student.id];
 
                         return (
                           <td 
                             key={dateKey}
                             className={`p-1.5 text-center border-r border-slate-50 font-sans text-[11px] align-middle ${
-                              isHoliday ? 'bg-amber-50/15' : ''
+                              isCanceled ? 'bg-rose-50/15' : isHoliday ? 'bg-amber-50/15' : ''
                             }`}
                           >
                             <div className="flex items-center justify-center">
-                              {isHoliday ? (
+                              {isCanceled ? (
+                                <span className="p-1 rounded bg-rose-50 border border-rose-200 text-rose-750 text-[10px]" title={`Canceled: "${cancelReason}"`}>
+                                  <CalendarX className="w-3.5 h-3.5" />
+                                </span>
+                              ) : isHoliday ? (
                                 <span className="p-1 rounded bg-amber-50 text-amber-600 text-[10px]" title="Holiday marked for this group">
                                   <Coffee className="w-3.5 h-3.5" />
                                 </span>

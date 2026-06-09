@@ -33,7 +33,9 @@ import {
   Sliders,
   CheckCircle2,
   AlertCircle,
-  CalendarX
+  CalendarX,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -295,6 +297,7 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState<string>('2026-05-31'); // Current local time is 2026-05-31
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [showRosterGroupSelector, setShowRosterGroupSelector] = useState<boolean>(true);
 
   // Warning thresholds & Dismissed alerts states
   const [attendanceThreshold, setAttendanceThreshold] = useState<number>(() => {
@@ -1438,7 +1441,11 @@ export default function App() {
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
+                    onClick={() => {
+                      setActiveTab(tab.id as any);
+                      // Rule: If selecting a different general workspace tool, the selector reappears.
+                      setShowRosterGroupSelector(true);
+                    }}
                     className={`w-full px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer relative text-left select-none ${
                       isSelected
                         ? 'bg-indigo-50 border-l-4 border-indigo-600 text-indigo-750 font-extrabold shadow-3xs'
@@ -1532,10 +1539,27 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => {
+                                const nextState = !isExpanded;
                                 setExpandedPrograms(prev => ({
                                   ...prev,
-                                  [prog.id]: !isExpanded
+                                  [prog.id]: nextState
                                 }));
+
+                                // --- JS USER-DEFINED LOGIC RULES ---
+                                // 1. Detects when an Academic Programs folder is opened/selected.
+                                if (nextState) {
+                                  // 2. Hides the "Roster Group Level Selector" element automatically.
+                                  setShowRosterGroupSelector(false);
+
+                                  // 3. Loads or displays the correct class based on my click.
+                                  // We automatically pick the first class section under this Academic Program.
+                                  if (progSections.length > 0) {
+                                    setActiveSectionId(progSections[0].id);
+                                  }
+                                } else {
+                                  // 4. If I close/collapse the folder, the selector may reappear.
+                                  setShowRosterGroupSelector(true);
+                                }
                               }}
                               className="flex-1 flex items-center gap-1.5 text-left text-xs font-bold text-slate-800 hover:text-indigo-600 cursor-pointer py-1 truncate"
                             >
@@ -1624,6 +1648,8 @@ export default function App() {
                                         onClick={() => {
                                           setActiveSectionId(sec.id);
                                           setEditingSectionId(null);
+                                          // Rule: When clicking on a specific academic program item directly, the class information updates and the selector becomes hidden.
+                                          setShowRosterGroupSelector(false);
                                         }}
                                         className="flex-1 text-left truncate cursor-pointer font-medium py-0.5"
                                       >
@@ -1692,72 +1718,74 @@ export default function App() {
         <section className="md:col-span-9 flex flex-col gap-6">
           
           {/* MULTIPLE CHOICE ACTIVE GROUP LEVEL SELECTOR */}
-          <div id="active-group-multiple-choice-selector" className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                  <BookOpen className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest font-display flex items-center gap-1.5">
-                      <span>Roster Group Level Selector</span>
-                      <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0 animate-bounce" style={{ animationDuration: '3s' }} />
-                    </h3>
-                    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-150/30 text-indigo-700 text-[9px] font-black tracking-normal uppercase select-none">
-                      <Filter className="w-2.5 h-2.5 text-indigo-650" />
-                      <span>Filter Active</span>
-                    </div>
+          {showRosterGroupSelector && (
+            <div id="active-group-multiple-choice-selector" className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                    <BookOpen className="w-4 h-4" />
                   </div>
-                  <p className="text-[10px] text-slate-400 font-bold">Select a multiple choice level to instantly view and mark student records</p>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest font-display flex items-center gap-1.5">
+                        <span>Roster Group Level Selector</span>
+                        <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0 animate-bounce" style={{ animationDuration: '3s' }} />
+                      </h3>
+                      <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-150/30 text-indigo-700 text-[9px] font-black tracking-normal uppercase select-none">
+                        <Filter className="w-2.5 h-2.5 text-indigo-650" />
+                        <span>Filter Active</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-bold">Select a multiple choice level to instantly view and mark student records</p>
+                  </div>
                 </div>
+                <span className="text-[10px] bg-indigo-50/70 border border-indigo-100/30 text-indigo-700 rounded-lg px-2.5 py-1 font-extrabold self-start sm:self-auto select-none">
+                  {activeSectionStudents.length} Registered Students
+                </span>
               </div>
-              <span className="text-[10px] bg-indigo-50/70 border border-indigo-100/30 text-indigo-700 rounded-lg px-2.5 py-1 font-extrabold self-start sm:self-auto select-none">
-                {activeSectionStudents.length} Registered Students
-              </span>
-            </div>
 
-            {/* Grid of Choices */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-              {sections.length === 0 ? (
-                <p className="text-[11px] text-slate-400 italic py-2 col-span-full text-center">No class sections registered. Click "+Class" above to add one.</p>
-              ) : (
-                sections.map(group => {
-                  const isSelected = activeSectionId === group.id;
-                  const count = students.filter(s => s.sectionId === group.id).length;
-                  
-                  return (
-                    <button
-                      key={group.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveSectionId(group.id);
-                        if (group.programId) {
-                          setExpandedPrograms(prev => ({ ...prev, [group.programId]: true }));
-                        }
-                      }}
-                      className={`relative p-3 rounded-xl border flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-150 ${
-                        isSelected
-                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100'
-                          : 'bg-slate-50/60 hover:bg-slate-100/85 border-slate-100 text-slate-500 hover:text-slate-805'
-                      }`}
-                    >
-                      <span className="text-[10px] font-bold font-display truncate max-w-full">
-                        {group.name}
-                      </span>
-                      <span className={`text-[9px] font-black mt-1 px-1.5 py-0.5 rounded-full ${
-                        isSelected 
-                          ? 'bg-indigo-750 text-indigo-100' 
-                          : 'bg-slate-100 text-slate-405'
-                      }`}>
-                        {count} stds
-                      </span>
-                    </button>
-                  );
-                })
-              )}
+              {/* Grid of Choices */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                {sections.length === 0 ? (
+                  <p className="text-[11px] text-slate-400 italic py-2 col-span-full text-center">No class sections registered. Click "+Class" above to add one.</p>
+                ) : (
+                  sections.map(group => {
+                    const isSelected = activeSectionId === group.id;
+                    const count = students.filter(s => s.sectionId === group.id).length;
+                    
+                    return (
+                      <button
+                        key={group.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveSectionId(group.id);
+                          if (group.programId) {
+                            setExpandedPrograms(prev => ({ ...prev, [group.programId]: true }));
+                          }
+                        }}
+                        className={`relative p-3 rounded-xl border flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-150 ${
+                          isSelected
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100'
+                            : 'bg-slate-50/60 hover:bg-slate-100/85 border-slate-100 text-slate-500 hover:text-slate-805'
+                        }`}
+                      >
+                        <span className="text-[10px] font-bold font-display truncate max-w-full">
+                          {group.name}
+                        </span>
+                        <span className={`text-[9px] font-black mt-1 px-1.5 py-0.5 rounded-full ${
+                          isSelected 
+                            ? 'bg-indigo-750 text-indigo-100' 
+                            : 'bg-slate-100 text-slate-405'
+                        }`}>
+                          {count} stds
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Dynamic Active Tab View Header */}
           <div className="bg-white border border-slate-100 rounded-2xl shadow-xs px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1789,6 +1817,29 @@ export default function App() {
                   <span>Active Group: <strong className="text-indigo-900">{activeSection.name}</strong></span>
                 </div>
               )}
+
+              <button
+                type="button"
+                onClick={() => setShowRosterGroupSelector(prev => !prev)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-xl text-[10px] font-extrabold transition cursor-pointer select-none shadow-3xs ${
+                  showRosterGroupSelector
+                    ? 'bg-amber-55/80 hover:bg-amber-100 border-amber-200/50 text-amber-800'
+                    : 'bg-indigo-55/80 hover:bg-indigo-100 border-indigo-205/60 text-indigo-800'
+                }`}
+                title={showRosterGroupSelector ? "Hide the Roster Group Level Selector panel" : "Show the Roster Group Level Selector panel"}
+              >
+                {showRosterGroupSelector ? (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Hide Selector</span>
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-3.5 h-3.5 text-indigo-650 shrink-0" />
+                    <span>Show Selector</span>
+                  </>
+                )}
+              </button>
               
               <button
                 type="button"
